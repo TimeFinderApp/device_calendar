@@ -75,13 +75,13 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
       return FloatingActionButton(
         key: const Key('addEventButton'),
         onPressed: () async {
-          final refreshEvents = await Navigator.push(context,
-              MaterialPageRoute(builder: (BuildContext context) {
-            return CalendarEventPage(_calendar);
-          }));
-          if (refreshEvents == true) {
-            await _retrieveCalendarEvents();
-          }
+          // final refreshEvents = await Navigator.push(context,
+          //     MaterialPageRoute(builder: (BuildContext context) {
+          //   return CalendarEventPage(_calendar);
+          // }));
+          // if (refreshEvents == true) {
+          //   await _retrieveCalendarEvents();
+          // }
         },
         child: const Icon(Icons.add),
       );
@@ -112,33 +112,32 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
   }
 
   Future _onTapped(Event event) async {
-    final refreshEvents = await Navigator.push(context,
-        MaterialPageRoute(builder: (BuildContext context) {
-      return CalendarEventPage(
-        _calendar,
-        event,
-        RecurringEventDialog(
-          _deviceCalendarPlugin,
-          event,
-          _onLoading,
-          _onDeletedFinished,
-        ),
-      );
-    }));
-    if (refreshEvents != null && refreshEvents) {
-      await _retrieveCalendarEvents();
-    }
+    // final refreshEvents = await Navigator.push(context,
+    //     MaterialPageRoute(builder: (BuildContext context) {
+    //   // return CalendarEventPage(
+    //   //   _calendar,
+    //   //   event,
+    //   //   RecurringEventDialog(
+    //   //     _deviceCalendarPlugin,
+    //   //     event,
+    //   //     _onLoading,
+    //   //     _onDeletedFinished,
+    //   //   ),
+    //   // );
+    // }));
+    // if (refreshEvents != null && refreshEvents) {
+    //   await _retrieveCalendarEvents();
+    // }
   }
 
   Future _retrieveCalendarEvents() async {
     final startDate = DateTime.now().add(const Duration(days: -30));
-    // final endDate = DateTime.now().add(Duration(days: 365 * 2));
-    final endDate = DateTime.now().add(const Duration(days: 365 * 10));
+    final endDate = DateTime.now().add(const Duration(days: 30));
     var calendarEventsResult = await _deviceCalendarPlugin.retrieveEvents(
         _calendar.id,
         RetrieveEventsParams(startDate: startDate, endDate: endDate));
     setState(() {
-      _calendarEvents = calendarEventsResult.data ?? [];
+      _calendarEvents = calendarEventsResult.data as List<Event>;
       _isLoading = false;
     });
   }
@@ -159,9 +158,9 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
           title: const Text('Warning'),
           content: SingleChildScrollView(
             child: ListBody(
-              children: const <Widget>[
-                Text('This will delete this calendar'),
-                Text('Are you sure?'),
+              children: <Widget>[
+                const Text('This will delete this calendar'),
+                const Text('Are you sure?'),
               ],
             ),
           ),
@@ -170,7 +169,7 @@ class _CalendarEventsPageState extends State<CalendarEventsPage> {
               onPressed: () async {
                 var returnValue =
                     await _deviceCalendarPlugin.deleteCalendar(_calendar.id!);
-                debugPrint(
+                print(
                     'returnValue: ${returnValue.data}, ${returnValue.errors}');
                 Navigator.of(context).pop();
                 Navigator.of(context).pop();
