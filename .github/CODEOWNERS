@@ -1,0 +1,7 @@
+# This CODEOWNERS file is a GitHub feature to define individuals or teams
+# that are responsible for code in a repository. When a file in this repo
+# gets changed and a PR is opened, the "owners" specified in this file
+# for the changed file(s) will automatically be requested for review.
+# Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @lukemmtt
