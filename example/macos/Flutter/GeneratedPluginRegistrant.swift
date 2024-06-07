@@ -6,9 +6,9 @@ import FlutterMacOS
 import Foundation
 
 import device_calendar
-import flutter_native_timezone
+import flutter_timezone
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   DeviceCalendarPlugin.register(with: registry.registrar(forPlugin: "DeviceCalendarPlugin"))
-  FlutterNativeTimezonePlugin.register(with: registry.registrar(forPlugin: "FlutterNativeTimezonePlugin"))
+  FlutterTimezonePlugin.register(with: registry.registrar(forPlugin: "FlutterTimezonePlugin"))
 }
