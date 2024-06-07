@@ -270,8 +270,12 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
         private func retrieveCalendars(_ result: @escaping FlutterResult) {
             checkPermissionsThenExecute(permissionsGrantedAction: {
+            DispatchQueue.main.async {
+                print("Starting to retrieve calendars...")
                 let ekCalendars = self.eventStore.calendars(for: .event)
+                print("Calendars fetched from event store: \(ekCalendars.count)")
                 let defaultCalendar = self.eventStore.defaultCalendarForNewEvents
+                print("Default calendar: \(String(describing: defaultCalendar?.calendarIdentifier))")
                 var calendars = [DeviceCalendar]()
                 for ekCalendar in ekCalendars {
 #if os(macOS)
@@ -286,18 +290,23 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                         isDefault: defaultCalendar?.calendarIdentifier == ekCalendar.calendarIdentifier,
                         color: calendarColor,
                         accountName: ekCalendar.source.title,
-                        accountType: getAccountType(ekCalendar.source.sourceType))
+                        accountType: self.getAccountType(ekCalendar.source.sourceType))
                     calendars.append(calendar)
+                    print("Added calendar: \(calendar.name)")
                 }
 
+                print("Total calendars processed: \(calendars.count)")
                 self.encodeJsonAndFinish(codable: calendars, result: result)
+            }
             }, result: result)
         }
 
+
         private func deleteCalendar(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-            checkPermissionsThenExecute(permissionsGrantedAction: {
+        checkPermissionsThenExecute(permissionsGrantedAction: { [weak self] in
+            guard let self = self else { return }
                 let arguments = call.arguments as! Dictionary<String, AnyObject>
-                let calendarId = arguments[calendarIdArgument] as! String
+            let calendarId = arguments[self.calendarIdArgument] as! String
 
                 let ekCalendar = self.eventStore.calendar(withIdentifier: calendarId)
                 if ekCalendar == nil {
@@ -320,6 +329,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }, result: result)
         }
 
+
         private func getAccountType(_ sourceType: EKSourceType) -> String {
             switch (sourceType) {
             case .local:
@@ -340,12 +350,13 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         }
 
         private func retrieveEvents(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-            checkPermissionsThenExecute(permissionsGrantedAction: {
+        checkPermissionsThenExecute(permissionsGrantedAction: { [weak self] in
+            guard let self = self else { return }
                 let arguments = call.arguments as! Dictionary<String, AnyObject>
-                let calendarId = arguments[calendarIdArgument] as! String
-                let startDateMillisecondsSinceEpoch = arguments[startDateArgument] as? NSNumber
-                let endDateDateMillisecondsSinceEpoch = arguments[endDateArgument] as? NSNumber
-                let eventIdArgs = arguments[eventIdsArgument] as? [String]
+            let calendarId = arguments[self.calendarIdArgument] as! String
+            let startDateMillisecondsSinceEpoch = arguments[self.startDateArgument] as? NSNumber
+            let endDateDateMillisecondsSinceEpoch = arguments[self.endDateArgument] as? NSNumber
+            let eventIdArgs = arguments[self.eventIdsArgument] as? [String]
                 var events = [Event]()
                 let specifiedStartEndDates = startDateMillisecondsSinceEpoch != nil && endDateDateMillisecondsSinceEpoch != nil
                 if specifiedStartEndDates {
@@ -359,7 +370,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                             calendars: [ekCalendar!])
                         let ekEvents = self.eventStore.events(matching: predicate)
                         for ekEvent in ekEvents {
-                            let event = createEventFromEkEvent(calendarId: calendarId, ekEvent: ekEvent)
+                        let event = self.createEventFromEkEvent(calendarId: calendarId, ekEvent: ekEvent)
                             events.append(event)
                         }
                     }
@@ -385,7 +396,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                         continue
                     }
 
-                let event = createEventFromEkEvent(calendarId: calendarId, ekEvent: ekEvent!)
+                let event = self.createEventFromEkEvent(calendarId: calendarId, ekEvent: ekEvent!)
 
                 events.append(event)
             }
@@ -806,16 +817,17 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func createOrUpdateEvent(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        checkPermissionsThenExecute(permissionsGrantedAction: {
+        checkPermissionsThenExecute(permissionsGrantedAction: { [weak self] in
+            guard let self = self else { return }
             let arguments = call.arguments as! Dictionary<String, AnyObject>
-            let calendarId = arguments[calendarIdArgument] as! String
-            let eventId = arguments[eventIdArgument] as? String
-            let isAllDay = arguments[eventAllDayArgument] as! Bool
-            let startDateMillisecondsSinceEpoch = arguments[eventStartDateArgument] as! NSNumber
-            let endDateDateMillisecondsSinceEpoch = arguments[eventEndDateArgument] as! NSNumber
+            let calendarId = arguments[self.calendarIdArgument] as! String
+            let eventId = arguments[self.eventIdArgument] as? String
+            let isAllDay = arguments[self.eventAllDayArgument] as! Bool
+            let startDateMillisecondsSinceEpoch = arguments[self.eventStartDateArgument] as! NSNumber
+            let endDateDateMillisecondsSinceEpoch = arguments[self.eventEndDateArgument] as! NSNumber
             let startDate = Date (timeIntervalSince1970: startDateMillisecondsSinceEpoch.doubleValue / 1000.0)
             let endDate = Date (timeIntervalSince1970: endDateDateMillisecondsSinceEpoch.doubleValue / 1000.0)
-            let startTimeZoneString = arguments[eventStartTimeZoneArgument] as? String
+            let startTimeZoneString = arguments[self.eventStartTimeZoneArgument] as? String
             let title = arguments[self.eventTitleArgument] as! String
             let description = arguments[self.eventDescriptionArgument] as? String
             let location = arguments[self.eventLocationArgument] as? String
@@ -865,11 +877,11 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 ekEvent!.url = nil
             }
 
-            ekEvent!.recurrenceRules = createEKRecurrenceRules(arguments)
-            setAttendees(arguments, ekEvent)
-            ekEvent!.alarms = createReminders(arguments)
+            ekEvent!.recurrenceRules = self.createEKRecurrenceRules(arguments)
+            self.setAttendees(arguments, ekEvent)
+            ekEvent!.alarms = self.createReminders(arguments)
 
-            if let availability = setAvailability(arguments) {
+            if let availability = self.setAvailability(arguments) {
                 ekEvent!.availability = availability
             }
 
@@ -897,13 +909,14 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func deleteEvent(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
-        checkPermissionsThenExecute(permissionsGrantedAction: {
+        checkPermissionsThenExecute(permissionsGrantedAction: { [weak self] in
+            guard let self = self else { return }
             let arguments = call.arguments as! Dictionary<String, AnyObject>
-            let calendarId = arguments[calendarIdArgument] as! String
-            let eventId = arguments[eventIdArgument] as! String
-            let startDateNumber = arguments[eventStartDateArgument] as? NSNumber
-            let endDateNumber = arguments[eventEndDateArgument] as? NSNumber
-            let followingInstances = arguments[followingInstancesArgument] as? Bool
+            let calendarId = arguments[self.calendarIdArgument] as! String
+            let eventId = arguments[self.eventIdArgument] as! String
+            let startDateNumber = arguments[self.eventStartDateArgument] as? NSNumber
+            let endDateNumber = arguments[self.eventEndDateArgument] as? NSNumber
+            let followingInstances = arguments[self.followingInstancesArgument] as? Bool
 
             let ekCalendar = self.eventStore.calendar(withIdentifier: calendarId)
             if ekCalendar == nil {
@@ -964,9 +977,10 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func showEventModal(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
 #if os(iOS)
-            checkPermissionsThenExecute(permissionsGrantedAction: {
+        checkPermissionsThenExecute(permissionsGrantedAction: { [weak self] in
+            guard let self = self else { return }
                 let arguments = call.arguments as! Dictionary<String, AnyObject>
-                let eventId = arguments[eventIdArgument] as! String
+            let eventId = arguments[self.eventIdArgument] as! String
                 let event = self.eventStore.event(withIdentifier: eventId)
 
                 if event != nil {
@@ -976,7 +990,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                     eventController.allowsEditing = true
                     eventController.allowsCalendarPreview = true
 
-                    let flutterViewController = getTopMostViewController()
+                let flutterViewController = self.getTopMostViewController()
                     let navigationController = UINavigationController(rootViewController: eventController)
 
                     navigationController.toolbar.isTranslucent = false
@@ -1051,12 +1065,23 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         }
     }
 
-    private func checkPermissionsThenExecute(permissionsGrantedAction: () -> Void, result: @escaping FlutterResult) {
+    private func checkPermissionsThenExecute(permissionsGrantedAction: @escaping () -> Void, result: @escaping FlutterResult) {
         if hasEventPermissions() {
+            DispatchQueue.main.async {
             permissionsGrantedAction()
-            return
         }
+        } else {
+            requestPermissions { [weak self] accessGranted in
+                guard let self = self else { return }
+                DispatchQueue.main.async {
+                    if accessGranted {
+                        permissionsGrantedAction()
+                    } else {
         self.finishWithUnauthorizedError(result: result)
+    }
+                }
+            }
+        }
     }
 
     private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
@@ -1064,15 +1089,37 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             completion(true)
             return
         }
-        eventStore.requestAccess(to: .event, completion: {
-            (accessGranted: Bool, _: Error?) in
+        if #available(iOS 17, *) {
+            Task {
+                do {
+                    try await eventStore.requestFullAccessToEvents()
+                    DispatchQueue.main.async {
+                        let status = EKEventStore.authorizationStatus(for: .event)
+                        let accessGranted = (status == .fullAccess)
             completion(accessGranted)
-        })
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        completion(false)
+                    }
+                }
+            }
+        } else {
+            eventStore.requestAccess(to:.event) { (accessGranted: Bool, error: Error?) in
+                DispatchQueue.main.async {
+                    completion(accessGranted)
+                }
+            }
+        }
     }
 
     private func hasEventPermissions() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
-        return status == EKAuthorizationStatus.authorized
+        if #available(iOS 17, *) {
+            return status == .fullAccess
+        } else {
+            return status == .authorized
+        }
     }
 }
 
