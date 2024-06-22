@@ -45,6 +45,11 @@ public class DeviceCalendarPluginBase: NSObject, EKEventViewDelegate, UINavigati
 }
 #endif
 
+// Singleton implementation for SharedEventStore
+class SharedEventStore {
+    static let shared = EKEventStore()
+}
+
 public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     struct DeviceCalendar: Codable {
         let id: String
@@ -70,7 +75,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         let eventURL: String?
         let recurrenceRule: RecurrenceRule?
         let organizer: Attendee?
-        let reminders: [Reminder]
+        let reminders: [CalendarReminder]
         let availability: Availability?
         let eventStatus: EventStatus?
     }
@@ -97,7 +102,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         let isCurrentUser: Bool
     }
 
-    struct Reminder: Codable {
+    struct CalendarReminder: Codable {
         let minutes: Int
     }
 
@@ -115,6 +120,47 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         case NONE
     }
 
+    // MZ - Added from Reminders Package
+    struct Reminder: Codable {
+        let list: List
+        let id: String
+        let title: String
+        let dueDate: DateComponents?
+        let priority: Int
+        let isCompleted: Bool
+        let notes: String?
+
+        init(reminder: EKReminder) {
+            self.list = List(list: reminder.calendar)
+            self.id = reminder.calendarItemIdentifier
+            self.title = reminder.title
+            self.dueDate = reminder.dueDateComponents
+            self.priority = reminder.priority
+            self.isCompleted = reminder.isCompleted
+            self.notes = reminder.notes
+        }
+
+        func toJson() -> String? {
+            let jsonData = try? JSONEncoder().encode(self)
+            return String(data: jsonData ?? Data(), encoding: .utf8)
+        }
+    }
+
+    struct List: Codable {
+        let title: String
+        let id: String
+
+        init(list: EKCalendar) {
+            self.title = list.title
+            self.id = list.calendarIdentifier
+        }
+
+        func toJson() -> String? {
+            let jsonData = try? JSONEncoder().encode(self)
+            return String(data: jsonData ?? Data(), encoding: .utf8)
+        }
+    }
+
     static let channelName = "plugins.builttoroam.com/device_calendar"
     let notFoundErrorCode = "404"
     let notAllowed = "405"
@@ -124,7 +170,22 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     let calendarNotFoundErrorMessageFormat = "The calendar with the ID %@ could not be found"
     let calendarReadOnlyErrorMessageFormat = "Calendar with ID %@ is read-only"
     let eventNotFoundErrorMessageFormat = "The event with the ID %@ could not be found"
-    let eventStore = EKEventStore()
+    let eventStore = SharedEventStore.shared
+    // MZ - Added variable from Reminders Package
+    lazy var defaultList: EKCalendar = {
+        return eventStore.defaultCalendarForNewReminders() ?? EKCalendar(for: .reminder, eventStore: eventStore)
+    }()
+    // let getPlatformVersionMethod = "getPlatformVersion"
+    let hasAccessMethod = "hasAccess"
+    let getPermissionStatusMethod = "getPermissionStatus"
+    let requestPermissionMethod = "requestPermission"
+    let getDefaultListIdMethod = "getDefaultListId"
+    let getDefaultListMethod = "getDefaultList"
+    let getAllListsMethod = "getAllLists"
+    let getRemindersMethod = "getReminders"
+    let saveReminderMethod = "saveReminder"
+    let deleteReminderMethod = "deleteReminder"
+    //
     let requestPermissionsMethod = "requestPermissions"
     let hasPermissionsMethod = "hasPermissions"
     let retrieveCalendarsMethod = "retrieveCalendars"
@@ -208,9 +269,48 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 createCalendar(call, result)
             case deleteCalendarMethod:
                 deleteCalendar(call, result)
+            // MZ - Added from Reminders Package
+            case hasAccessMethod:
+                result(hasAccess)
+            case getPermissionStatusMethod:
+                getPermissionStatus(result)
+            case requestPermissionMethod:
+                requestPermission { granted in
+                    result(granted)
+                }
+            case getDefaultListIdMethod:
+                getDefaultListId(result)
+            case getDefaultListMethod:
+                getDefaultList(result)
+            case getAllListsMethod:
+                getAllLists(result)
+            case getRemindersMethod:
+                if let args = call.arguments as? [String: String?] {
+                    if let id = args["id"] {
+                        getReminders(id, result)
+                    }
+                }
+            case saveReminderMethod:
+                if let args = call.arguments as? [String: Any] {
+                    if let reminder = args["reminder"] as? [String: Any] {
+                        saveReminder(reminder, result)
+                    }
+                }
+            case deleteReminderMethod:
+                if let args = call.arguments as? [String: String] {
+                    if let id = args["id"] {
+                        deleteReminder(id, result)
+                    }
+                }
+            //
             default:
                 result(FlutterMethodNotImplemented)
             }
+        }
+
+        // MZ - Added from Reminders Package
+        var hasAccess: Bool {
+            return hasReminderPermission()
         }
 
         private func hasPermissions(_ result: FlutterResult) {
@@ -418,10 +518,10 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
         }
 
-        var reminders = [Reminder]()
+        var reminders = [CalendarReminder]()
         if ekEvent.alarms != nil {
             for alarm in ekEvent.alarms! {
-                reminders.append(Reminder(minutes: Int(-alarm.relativeOffset / 60)))
+                reminders.append(CalendarReminder(minutes: Int(-alarm.relativeOffset / 60)))
             }
         }
 
@@ -1066,19 +1166,27 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func checkPermissionsThenExecute(permissionsGrantedAction: @escaping () -> Void, result: @escaping FlutterResult) {
+        print("Checking permissions...")
         if hasEventPermissions() {
+            print("Permissions already granted.")
             DispatchQueue.main.async {
-            permissionsGrantedAction()
-        }
+                permissionsGrantedAction()
+            }
         } else {
+            print("Requesting permissions...")
             requestPermissions { [weak self] accessGranted in
-                guard let self = self else { return }
+                guard let self = self else { 
+                    print("Self is nil, aborting.")
+                    return 
+                }
                 DispatchQueue.main.async {
                     if accessGranted {
+                        print("Permissions granted.")
                         permissionsGrantedAction()
                     } else {
-        self.finishWithUnauthorizedError(result: result)
-    }
+                        print("Permissions not granted.")
+                        self.finishWithUnauthorizedError(result: result)
+                    }
                 }
             }
         }
@@ -1086,26 +1194,35 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
         if hasEventPermissions() {
+            print("Permissions already granted (checked in requestPermissions).")
             completion(true)
             return
         }
         if #available(iOS 17, *) {
+            print("Requesting full access to events for iOS 17 or later...")
             Task {
                 do {
                     try await eventStore.requestFullAccessToEvents()
                     DispatchQueue.main.async {
                         let status = EKEventStore.authorizationStatus(for: .event)
                         let accessGranted = (status == .fullAccess)
-            completion(accessGranted)
+                        print("Full access request status: \(status.rawValue), access granted: \(accessGranted)")
+                        completion(accessGranted)
                     }
                 } catch {
+                    print("Error requesting full access: \(error)")
                     DispatchQueue.main.async {
                         completion(false)
                     }
                 }
             }
         } else {
-            eventStore.requestAccess(to:.event) { (accessGranted: Bool, error: Error?) in
+            print("Requesting access to events for iOS versions prior to 17...")
+            eventStore.requestAccess(to: .event) { (accessGranted: Bool, error: Error?) in
+                if let error = error {
+                    print("Error requesting access: \(error)")
+                }
+                print("Access granted: \(accessGranted)")
                 DispatchQueue.main.async {
                     completion(accessGranted)
                 }
@@ -1115,10 +1232,174 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func hasEventPermissions() -> Bool {
         let status = EKEventStore.authorizationStatus(for: .event)
-        if #available(iOS 17, *) {
-            return status == .fullAccess
+        if #available(iOS 17.0, macOS 14.0, *) {
+            return status == .fullAccess || status == .authorized
         } else {
             return status == .authorized
+        }
+    }
+
+    // MZ - Reminder Package Methods
+    private func getDefaultList(_ result: @escaping FlutterResult) {
+        // Since defaultList is not optional, directly return its JSON representation
+        if let json = List(list: defaultList).toJson() {
+            result(json)
+        } else {
+            result(FlutterError(code: "JSON_ERROR", message: "Failed to convert default list to JSON", details: nil))
+        }
+    }
+
+    private func getDefaultListId(_ result: @escaping FlutterResult) {
+        result(defaultList.calendarIdentifier)
+    }
+
+    func requestPermission(completion: @escaping (Bool) -> Void) {
+        if hasReminderPermission() {
+            print("Permission already granted.")
+            completion(true)
+            return
+        }
+
+        if #available(iOS 17.0, macOS 14.0, *) {
+            print("Requesting full access to reminders for iOS 17.0+ or macOS 14.0+.")
+            Task {
+                do {
+                    let accessGranted = try await eventStore.requestFullAccessToReminders()
+                    DispatchQueue.main.async {
+                        let status = EKEventStore.authorizationStatus(for: .reminder)
+                        print("Full access request completed. Access granted: \(accessGranted). Authorization status: \(status.rawValue)")
+                        completion(accessGranted)
+                    }
+                } catch {
+                    print("Failed to request full access to reminders with error: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        completion(false)
+                    }
+                }
+            }
+        } else {
+            print("Requesting access to reminders for earlier versions.")
+            eventStore.requestAccess(to: .reminder) { (accessGranted: Bool, error: Error?) in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        print("Failed to request access to reminders with error: \(error.localizedDescription)")
+                    } else {
+                        let status = EKEventStore.authorizationStatus(for: .reminder)
+                        print("Access request completed. Access granted: \(accessGranted). Authorization status: \(status.rawValue)")
+                    }
+                    completion(accessGranted)
+                }
+            }
+        }
+    }
+
+    private func hasReminderPermission() -> Bool {
+        let status = EKEventStore.authorizationStatus(for: .reminder)
+        if #available(iOS 17.0, macOS 14.0, *) {
+            let hasPermission = (status == .fullAccess)
+            print("Authorization status for iOS 17.0+ or macOS 14.0+: \(status). Has permission: \(hasPermission)")
+            return hasPermission
+        } else {
+            let hasPermission = (status == .authorized)
+            print("Authorization status for earlier versions: \(status). Has permission: \(hasPermission)")
+            return hasPermission
+        }
+    }
+
+    private func getAllLists(_ result: @escaping FlutterResult) {
+        let lists = eventStore.calendars(for: .reminder)
+        let jsonData = try? JSONEncoder().encode(lists.map { List(list: $0) })
+        if let jsonData = jsonData {
+            result(String(data: jsonData, encoding: .utf8))
+        } else {
+            result(FlutterError(code: "JSON_ERROR", message: "Failed to convert lists to JSON", details: nil))
+        }
+    }
+
+    private func getReminders(_ id: String?, _ result: @escaping FlutterResult) {
+        var calendar: [EKCalendar]? = nil
+        if let id = id {
+            calendar = [eventStore.calendar(withIdentifier: id) ?? EKCalendar()]
+        }
+        let predicate: NSPredicate? = eventStore.predicateForReminders(in: calendar)
+        if let predicate = predicate {
+            eventStore.fetchReminders(matching: predicate) { reminders in
+                let rems = reminders ?? []
+                let resultArray = rems.map { Reminder(reminder: $0) }
+                let json = try? JSONEncoder().encode(resultArray)
+                result(String(data: json ?? Data(), encoding: .utf8))
+            }
+        } else {
+            result(FlutterError(code: "PREDICATE_ERROR", message: "Failed to create predicate for reminders", details: nil))
+        }
+    }
+
+    private func saveReminder(_ json: [String: Any], _ result: @escaping FlutterResult) {
+        let reminder: EKReminder
+
+        guard let calendarID = json["list"] as? String,
+            let list = eventStore.calendar(withIdentifier: calendarID) else {
+            result(FlutterError(code: "INVALID_CALENDAR_ID", message: "Invalid calendarID", details: nil))
+            return
+        }
+
+        if let reminderID = json["id"] as? String,
+        let existingReminder = eventStore.calendarItem(withIdentifier: reminderID) as? EKReminder {
+            reminder = existingReminder
+        } else {
+            reminder = EKReminder(eventStore: eventStore)
+        }
+
+        reminder.calendar = list
+        reminder.title = json["title"] as? String ?? ""
+        reminder.priority = json["priority"] as? Int ?? 0
+        reminder.isCompleted = json["isCompleted"] as? Bool ?? false
+        reminder.notes = json["notes"] as? String
+        if let date = json["dueDate"] as? [String: Int] {
+            reminder.dueDateComponents = DateComponents(year: date["year"], month: date["month"], day: date["day"])
+        } else {
+            reminder.dueDateComponents = nil
+        }
+
+        do {
+            try eventStore.save(reminder, commit: true)
+            result(reminder.calendarItemIdentifier)
+        } catch {
+            result(FlutterError(code: "SAVE_ERROR", message: "Failed to save reminder", details: error.localizedDescription))
+        }
+    }
+
+    private func deleteReminder(_ id: String, _ result: @escaping FlutterResult) {
+        guard let reminder = eventStore.calendarItem(withIdentifier: id) as? EKReminder else {
+            result(FlutterError(code: "NOT_FOUND", message: "Cannot find reminder with ID: \(id)", details: nil))
+            return
+        }
+
+        do {
+            try eventStore.remove(reminder, commit: true)
+            result(nil)
+        } catch {
+            result(FlutterError(code: "DELETE_ERROR", message: "Failed to delete reminder", details: error.localizedDescription))
+        }
+    }
+
+    private func getPermissionStatus(_ result: @escaping FlutterResult) {
+        let status = EKEventStore.authorizationStatus(for: .reminder)
+        switch status {
+        case .authorized:
+            result("authorized")
+        case .denied:
+            result("denied")
+        case .notDetermined:
+            result("notDetermined")
+        case .restricted:
+            result("restricted")
+        case .fullAccess:
+            result("fullAccess")
+        case .writeOnly:
+            result("writeOnly")
+        @unknown default:
+            result("unknown")
         }
     }
 }
