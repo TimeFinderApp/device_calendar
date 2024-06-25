@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
@@ -17,10 +18,14 @@ import 'models/retrieve_events_params.dart';
 
 /// Provides functionality for working with device calendar(s)
 class DeviceCalendarPlugin {
-  static const MethodChannel channel =
+  static const MethodChannel _channel =
       MethodChannel(ChannelConstants.channelName);
 
   static final DeviceCalendarPlugin _instance = DeviceCalendarPlugin.private();
+
+  // StreamController to broadcast event changes
+  final StreamController<void> _eventChangeController =
+      StreamController<void>.broadcast();
 
   factory DeviceCalendarPlugin({bool shouldInitTimezone = true}) {
     if (shouldInitTimezone) {
@@ -30,7 +35,9 @@ class DeviceCalendarPlugin {
   }
 
   @visibleForTesting
-  DeviceCalendarPlugin.private();
+  DeviceCalendarPlugin.private() {
+    _setupEventChannel();
+  }
 
   /// Requests permissions to modify the calendars on the device
   ///
@@ -358,7 +365,7 @@ class DeviceCalendarPlugin {
         }
       }
 
-      var rawData = await channel.invokeMethod(
+      var rawData = await _channel.invokeMethod(
         channelMethodName,
         arguments != null ? arguments() : null,
       );
@@ -439,5 +446,46 @@ class DeviceCalendarPlugin {
       ErrorCodes.invalidArguments,
       ErrorMessages.invalidMissingCalendarId,
     );
+  }
+
+  // Start tracking calendar changes
+  Future<void> startTracking() async {
+    try {
+      await _channel.invokeMethod(
+        ChannelConstants.methodNameStartCalendarTracking,
+      );
+    } on PlatformException catch (e) {
+      debugPrint("Failed to start tracking: '${e.message}'.");
+    }
+  }
+
+  // Stop tracking calendar changes
+  Future<void> stopTracking() async {
+    try {
+      await _channel.invokeMethod(
+        ChannelConstants.methodNameStopCalendarTracking,
+      );
+    } on PlatformException catch (e) {
+      debugPrint("Failed to stop tracking: '${e.message}'.");
+    }
+  }
+
+  // Getter for the event change stream
+  Stream<void> get onCalendarEventChange => _eventChangeController.stream;
+
+  // Private method to set up event channel for calendar changes
+  void _setupEventChannel() {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onCalendarEventChange') {
+        print("Calendar event change detected.");
+        _eventChangeController.add(null); // Notify listeners about the change
+      }
+    });
+  }
+
+  // Dispose the stream controller to avoid memory leaks
+  void dispose() {
+    _eventChangeController.close();
+    print("Disposed event change controller.");
   }
 }

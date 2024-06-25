@@ -9,6 +9,7 @@ dependencies:
   collection: ^1.17.0
   timezone: ^0.9.1
   rrule: ^0.2.16
+  plugin_platform_interface: ^2.1.4
 
 dev_dependencies:
   flutter_test:
@@ -23,8 +24,10 @@ flutter:
         pluginClass: DeviceCalendarPlugin
       ios:
         pluginClass: DeviceCalendarPlugin
+        podspec: ios/device_calendar.podspec
       macos:
         pluginClass: DeviceCalendarPlugin
+        podspec: macos/device_calendar.podspec
 
 environment:
   sdk: ">=2.12.0 <3.0.0"

@@ -11,6 +11,8 @@ class ChannelConstants {
   static const String methodNameCreateCalendar = 'createCalendar';
   static const String methodNameDeleteCalendar = 'deleteCalendar';
   static const String methodNameShowiOSEventModal = 'showiOSEventModal';
+  static const String methodNameStartCalendarTracking = 'startCalendarTracking';
+  static const String methodNameStopCalendarTracking = 'stopCalendarTracking';
 
   static const String parameterNameCalendarId = 'calendarId';
   static const String parameterNameStartDate = 'startDate';

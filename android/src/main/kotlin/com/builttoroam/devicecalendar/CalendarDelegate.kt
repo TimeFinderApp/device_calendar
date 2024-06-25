@@ -7,6 +7,7 @@ import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.database.ContentObserver
 import android.database.Cursor
 import android.graphics.Color
 import android.net.Uri
@@ -16,6 +17,9 @@ import android.provider.CalendarContract
 import android.provider.CalendarContract.CALLER_IS_SYNCADAPTER
 import android.provider.CalendarContract.Events
 import android.text.format.DateUtils
+import android.util.Log
+import androidx.annotation.NonNull
+import androidx.core.app.ActivityCompat
 import com.builttoroam.devicecalendar.common.Constants.Companion.ATTENDEE_EMAIL_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.ATTENDEE_NAME_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.ATTENDEE_PROJECTION
@@ -80,7 +84,11 @@ import org.dmfs.rfc5545.recur.Freq
 import java.text.SimpleDateFormat
 import java.util.*
 
-class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
+class CalendarDelegate(
+    private val _binding: ActivityPluginBinding?,
+    private val _context: Context,
+    private val channel: MethodChannel
+) : PluginRegistry.RequestPermissionsResultListener {
     private val RETRIEVE_CALENDARS_REQUEST_CODE = 0
     private val RETRIEVE_EVENTS_REQUEST_CODE = RETRIEVE_CALENDARS_REQUEST_CODE + 1
     private val RETRIEVE_CALENDAR_REQUEST_CODE = RETRIEVE_EVENTS_REQUEST_CODE + 1
@@ -94,15 +102,12 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
     private val BYSETPOS_PART = "BYSETPOS"
 
     private val _cachedParametersMap: MutableMap<Int, CalendarMethodsParametersCacheModel> = mutableMapOf()
-    private var _binding: ActivityPluginBinding? = null
-    private var _context: Context? = null
     private var _gson: Gson? = null
 
     private val uiThreadHandler = Handler(Looper.getMainLooper())
+    private var calendarObserver: ContentObserver? = null
 
-    constructor(binding: ActivityPluginBinding?, context: Context) {
-        _binding = binding
-        _context = context
+    init {
         val gsonBuilder = GsonBuilder()
         gsonBuilder.registerTypeAdapter(RecurrenceFrequency::class.java, RecurrenceFrequencySerializer())
         gsonBuilder.registerTypeAdapter(DayOfWeek::class.java, DayOfWeekSerializer())
@@ -444,6 +449,37 @@ class CalendarDelegate : PluginRegistry.RequestPermissionsResultListener {
             val parameters = CalendarMethodsParametersCacheModel(pendingChannelResult, CREATE_OR_UPDATE_EVENT_REQUEST_CODE, calendarId)
             parameters.event = event
             requestPermissions(parameters)
+        }
+    }
+
+    fun startCalendarTracking(result: MethodChannel.Result) {
+        if (calendarObserver == null) {
+            calendarObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) {
+                    super.onChange(selfChange)
+                    onCalendarEventChange()
+                }
+            }
+            _context?.contentResolver?.registerContentObserver(
+                CalendarContract.Events.CONTENT_URI,
+                true,
+                calendarObserver!!
+            )
+        }
+        result.success(null)
+    }
+
+    fun stopCalendarTracking(result: MethodChannel.Result) {
+        calendarObserver?.let {
+            _context?.contentResolver?.unregisterContentObserver(it)
+            calendarObserver = null
+        }
+        result.success(null)
+    }
+
+    private fun onCalendarEventChange() {
+        uiThreadHandler.post {
+            channel.invokeMethod("onCalendarEventChange", null)
         }
     }
 
