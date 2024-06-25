@@ -37,6 +37,8 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
     private val CREATE_OR_UPDATE_EVENT_METHOD = "createOrUpdateEvent"
     private val CREATE_CALENDAR_METHOD = "createCalendar"
     private val DELETE_CALENDAR_METHOD = "deleteCalendar"
+    private val START_CALENDAR_TRACKING_METHOD = "startCalendarTracking"
+    private val STOP_CALENDAR_TRACKING_METHOD = "stopCalendarTracking"
 
     // Method arguments
     private val CALENDAR_ID_ARGUMENT = "calendarId"
@@ -81,7 +83,7 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
         context = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, CHANNEL_NAME)
         channel.setMethodCallHandler(this)
-        _calendarDelegate = CalendarDelegate(null, context!!)
+        _calendarDelegate = CalendarDelegate(null, context!!, channel)
     }
 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
@@ -90,7 +92,7 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
-        _calendarDelegate = CalendarDelegate(binding, context!!)
+        _calendarDelegate = CalendarDelegate(binding, context!!, channel)
         binding.addRequestPermissionsResultListener(_calendarDelegate)
     }
 
@@ -100,7 +102,7 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         activity = binding.activity
-        _calendarDelegate = CalendarDelegate(binding, context!!)
+        _calendarDelegate = CalendarDelegate(binding, context!!, channel)
         binding.addRequestPermissionsResultListener(_calendarDelegate)
     }
 
@@ -116,6 +118,14 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
 
             HAS_PERMISSIONS_METHOD -> {
                 _calendarDelegate.hasPermissions(result)
+            }
+
+            START_CALENDAR_TRACKING_METHOD -> {
+                _calendarDelegate.startCalendarTracking(result)
+            }
+
+            STOP_CALENDAR_TRACKING_METHOD -> {
+                _calendarDelegate.stopCalendarTracking(result)
             }
 
             RETRIEVE_CALENDARS_METHOD -> {

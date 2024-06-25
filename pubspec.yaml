@@ -24,8 +24,10 @@ flutter:
         pluginClass: DeviceCalendarPlugin
       ios:
         pluginClass: DeviceCalendarPlugin
+        podspec: ios/device_calendar.podspec
       macos:
         pluginClass: DeviceCalendarPlugin
+        podspec: macos/device_calendar.podspec
 
 environment:
   sdk: ">=2.12.0 <3.0.0"
