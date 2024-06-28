@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../device_calendar.dart';
 import '../common/error_messages.dart';
@@ -204,7 +206,21 @@ class Event {
             json['recurrenceRule']['bysetpos'].cast<int>();
       }
       // debugPrint("EVENT_MODEL: $title; RRULE = ${json['recurrenceRule']}");
-      recurrenceRule = RecurrenceRule.fromJson(json['recurrenceRule']);
+      try {
+        if (json['recurrenceRule'] != null) {
+          recurrenceRule = RecurrenceRule.fromJson(json['recurrenceRule']);
+        }
+      } catch (e, stackTrace) {
+        FlutterError.reportError(FlutterErrorDetails(
+          exception: e,
+          stack: stackTrace,
+          library: 'device_calendar plugin',
+          context: ErrorDescription('while parsing RecurrenceRule from JSON'),
+          informationCollector: () => [
+            DiagnosticsNode.message('JSON: ${jsonEncode(json)}'),
+          ],
+        ));
+      }
       // debugPrint("EVENT_MODEL_recurrenceRule: ${recurrenceRule.toString()}");
     }
 
