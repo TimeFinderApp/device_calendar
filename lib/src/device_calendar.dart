@@ -123,8 +123,9 @@ class DeviceCalendarPlugin {
       ),*/
         evaluateResponse: (rawData) => UnmodifiableListView(
               json.decode(rawData).map<Event>((decodedEvent) {
-                // debugPrint(
-                //     "JSON_RRULE: ${decodedEvent['recurrenceRule']}, ${(decodedEvent['recurrenceRule']['byday'])}");
+                // MZ - Added for debugging purposes
+                // debugPrint("RAW_DATA: $decodedEvent");
+
                 return Event.fromJson(decodedEvent);
               }),
             ));

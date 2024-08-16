@@ -51,6 +51,13 @@ class Event {
   /// Indicates if this event is of confirmed, canceled, tentative or none status
   EventStatus? status;
 
+  /// Indicates if this event is detached from the recurring event series (For iOS only)
+  bool? eventIsDetached;
+
+  /// Indicates when the original occurrence of the event starts
+  /// This is only used when the event is a detached event from a recurring event series (For iOS only)
+  TZDateTime? eventOriginalOccurrenceDate;
+
   ///Note for development:
   ///
   ///JSON field names are coded in dart, swift and kotlin to facilitate data exchange.
@@ -74,12 +81,14 @@ class Event {
       this.location,
       this.url,
       this.allDay = false,
-      this.status});
+      this.status,
+      this.eventIsDetached = false,
+      this.eventOriginalOccurrenceDate});
 
   ///Get Event from JSON.
   ///
   ///Sample JSON:
-  ///{calendarId: 00, eventId: 0000, eventTitle: Sample Event, eventDescription: This is a sample event, eventStartDate: 1563719400000, eventStartTimeZone: Asia/Hong_Kong, eventEndDate: 1640532600000, eventEndTimeZone: Asia/Hong_Kong, eventAllDay: false, eventLocation: Yuenlong Station, eventURL: null, availability: BUSY, attendees: [{name: commonfolk, emailAddress: total.loss@hong.com, role: 1, isOrganizer: false, attendanceStatus: 3}], reminders: [{minutes: 39}]}
+  ///{calendarId: 00, eventId: 0000, eventTitle: Sample Event, eventDescription: This is a sample event, eventStartDate: 1563719400000, eventStartTimeZone: Asia/Hong_Kong, eventEndDate: 1640532600000, eventEndTimeZone: Asia/Hong_Kong, eventAllDay: false, eventLocation: Yuenlong Station, eventURL: null, availability: BUSY, attendees: [{name: commonfolk, emailAddress: total.loss@hong.com, role: 1, isOrganizer: false, attendanceStatus: 3}], eventOccurrenceDate: 1563719400000, eventIsDetached: false, reminders: [{minutes: 39}]}
   Event.fromJson(Map<String, dynamic>? json) {
     if (json == null) {
       throw ArgumentError(ErrorMessages.fromJsonMapIsNull);
@@ -171,6 +180,14 @@ class Event {
       }
     }
 
+    eventIsDetached = json['eventIsDetached'];
+
+    var occurrenceDateTimestamp = json['eventOccurrenceDate'];
+    eventOriginalOccurrenceDate = occurrenceDateTimestamp != null
+        ? TZDateTime.fromMillisecondsSinceEpoch(
+            startTimeZone, occurrenceDateTimestamp)
+        : null;
+
     if (json['recurrenceRule'] != null) {
       // debugPrint(
       //     "EVENT_MODEL: $title; START: $start, END: $end RRULE = ${json['recurrenceRule']}");
@@ -253,6 +270,9 @@ class Event {
     data['eventURL'] = url?.data?.contentText;
     data['availability'] = availability.enumToString;
     data['eventStatus'] = status?.enumToString;
+    data['eventIsDetached'] = eventIsDetached;
+    data['eventOriginalOccurrenceDate'] =
+        eventOriginalOccurrenceDate?.millisecondsSinceEpoch;
 
     if (attendees != null) {
       data['attendees'] = attendees?.map((a) => a?.toJson()).toList();
