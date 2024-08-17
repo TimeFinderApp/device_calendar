@@ -78,6 +78,8 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         let reminders: [CalendarReminder]
         let availability: Availability?
         let eventStatus: EventStatus?
+        let eventIsDetached: Bool
+        let eventOccurrenceDate: Int64
     }
 
     struct RecurrenceRule: Codable {
@@ -579,7 +581,9 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             organizer: convertEkParticipantToAttendee(ekParticipant: ekEvent.organizer),
             reminders: reminders,
             availability: convertEkEventAvailability(ekEventAvailability: ekEvent.availability),
-            eventStatus: convertEkEventStatus(ekEventStatus: ekEvent.status)
+            eventStatus: convertEkEventStatus(ekEventStatus: ekEvent.status),
+            eventIsDetached: ekEvent.isDetached,
+            eventOccurrenceDate: Int64(ekEvent.occurrenceDate.millisecondsSinceEpoch)
         )
 
         return event
@@ -633,6 +637,12 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     
     private func parseEKRecurrenceRules(_ ekEvent: EKEvent) -> RecurrenceRule? {
         var recurrenceRule: RecurrenceRule?
+
+        // MZ - Added for debugging purposes
+        if ekEvent.isDetached {
+            print("Debug: The event with ID \(ekEvent.eventIdentifier ?? "unknown") is a detached occurrence from its recurrence rule.")
+        }
+
         if ekEvent.hasRecurrenceRules {
             let ekRecurrenceRule = ekEvent.recurrenceRules![0]
             var frequency: String
@@ -1196,6 +1206,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             let jsonEncoder = JSONEncoder()
             let jsonData = try jsonEncoder.encode(codable)
             let jsonString = String(data: jsonData, encoding: .utf8)
+            print("JSON: \(jsonString ?? "nil")")
             result(jsonString)
         } catch {
             result(FlutterError(code: genericError, message: error.localizedDescription, details: nil))
