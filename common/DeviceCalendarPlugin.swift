@@ -382,25 +382,25 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
         private func createCalendar(_ call: FlutterMethodCall, _ result: FlutterResult) {
             let arguments = call.arguments as! Dictionary<String, AnyObject>
-            let calendar = EKCalendar.init(for: EKEntityType.event, eventStore: eventStore)
+            let calendar = EKCalendar.calendar(for: .event, eventStore: eventStore)
             do {
                 calendar.title = arguments[calendarNameArgument] as! String
                 let calendarColor = arguments[calendarColorArgument] as? String
-
+                
                 if (calendarColor != nil) {
                     calendar.cgColor = XColor(hex: calendarColor!)?.cgColor
                 }
                 else {
                     calendar.cgColor = XColor(red: 255, green: 0, blue: 0, alpha: 0).cgColor // Red colour as a default
                 }
-
+                
                 guard let source = getSource() else {
                     result(FlutterError(code: self.genericError, message: "Local calendar was not found.", details: nil))
                     return
                 }
-
+                
                 calendar.source = source
-
+                
                 try eventStore.saveCalendar(calendar, commit: true)
                 result(calendar.calendarIdentifier)
             }
