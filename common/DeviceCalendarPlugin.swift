@@ -330,23 +330,28 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         }
 
         private func getSource() -> EKSource? {
-            let localSources = eventStore.sources.filter { $0.sourceType == .local }
-
-            if (!localSources.isEmpty) {
-                return localSources.first
+            // Try to find a local source first
+            if let localSource = eventStore.sources.first(where: { $0.sourceType == .local }) {
+                return localSource
             }
 
+            // Fall back to the default source for new events
             if let defaultSource = eventStore.defaultCalendarForNewEvents?.source {
                 return defaultSource
             }
 
-            let iCloudSources = eventStore.sources.filter { $0.sourceType == .calDAV && $0.sourceIdentifier == "iCloud" }
-
-            if (!iCloudSources.isEmpty) {
-                return iCloudSources.first
+            // Check for iCloud source
+            if let iCloudSource = eventStore.sources.first(where: { $0.sourceType == .calDAV && $0.title == "iCloud" }) {
+                return iCloudSource
             }
 
-            return nil
+            // If no source is found, log available sources for debugging
+            print("Available sources:")
+            for source in eventStore.sources {
+                print("Source: \(source.title), Type: \(source.sourceType.rawValue)")
+            }
+
+            return nil // No valid source found
         }
 
         // MZ - Calendar Monitoring Methods
@@ -382,29 +387,44 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
         private func createCalendar(_ call: FlutterMethodCall, _ result: FlutterResult) {
             let arguments = call.arguments as! Dictionary<String, AnyObject>
-            let calendar = EKCalendar.init(for: EKEntityType.event, eventStore: eventStore)
+            let calendar: EKCalendar
+
             do {
+                if #available(iOS 17, macOS 14, *) {
+                    // For iOS 17 and macOS 14 or later
+                    calendar = EKCalendar(eventStore: eventStore)
+                    calendar.entityType = .event
+                    // Set the source
+                    guard let source = getSource() else {
+                        result(FlutterError(code: self.genericError, message: "Failed to find a valid calendar source.", details: nil))
+                        return
+                    }
+                    calendar.source = source
+                } else {
+                    // For earlier versions
+                    calendar = EKCalendar(for: .event, eventStore: eventStore)
+                    // Set the source
+                    guard let source = getSource() else {
+                        result(FlutterError(code: self.genericError, message: "Failed to find a valid calendar source.", details: nil))
+                        return
+                    }
+                    calendar.source = source
+                }
+
+                // Set the calendar properties
                 calendar.title = arguments[calendarNameArgument] as! String
-                let calendarColor = arguments[calendarColorArgument] as? String
-
-                if (calendarColor != nil) {
-                    calendar.cgColor = XColor(hex: calendarColor!)?.cgColor
-                }
-                else {
-                    calendar.cgColor = XColor(red: 255, green: 0, blue: 0, alpha: 0).cgColor // Red colour as a default
-                }
-
-                guard let source = getSource() else {
-                    result(FlutterError(code: self.genericError, message: "Local calendar was not found.", details: nil))
-                    return
+                if let calendarColor = arguments[calendarColorArgument] as? String,
+                   let xColor = XColor(hex: calendarColor) {
+                    calendar.cgColor = xColor.cgColor
+                } else {
+                    // Use full opacity for the default color
+                    calendar.cgColor = XColor(red: 1.0, green: 0, blue: 0, alpha: 1.0).cgColor // Default red color
                 }
 
-                calendar.source = source
-
+                // Save the calendar
                 try eventStore.saveCalendar(calendar, commit: true)
                 result(calendar.calendarIdentifier)
-            }
-            catch {
+            } catch {
                 eventStore.reset()
                 result(FlutterError(code: self.genericError, message: error.localizedDescription, details: nil))
             }
