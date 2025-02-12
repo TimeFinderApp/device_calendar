@@ -2,6 +2,8 @@ import 'package:device_calendar/device_calendar.dart';
 import 'package:device_calendar/src/common/error_codes.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rrule/rrule.dart' as rrule;
+import 'package:timezone/timezone.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -196,7 +198,10 @@ void main() {
         emailAddress: 'test@t.com',
         role: AttendeeRole.Required,
         isOrganiser: true);
-    final recurrence = RecurrenceRule(frequency: Frequency.daily);
+    final recurrence = rrule.RecurrenceRule(
+      frequency: rrule.Frequency.daily,
+      interval: 1,
+    );
     final reminder = Reminder(minutes: 10);
     var event = Event('calendarId',
         eventId: 'eventId',
