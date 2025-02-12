@@ -3,9 +3,13 @@ import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
+import 'package:timezone/timezone.dart';
+import 'package:rrule/rrule.dart' as rrule;
 
 import '../../device_calendar.dart';
 import '../common/error_messages.dart';
+import 'package:device_calendar/src/models/attendee.dart';
+import 'package:device_calendar/src/models/reminder.dart';
 
 /// An event associated with a calendar
 class Event {
@@ -40,7 +44,7 @@ class Event {
   List<Attendee?>? attendees;
 
   /// The recurrence rule for this event
-  RecurrenceRule? recurrenceRule;
+  rrule.RecurrenceRule? recurrenceRule;
 
   /// A list of reminders (by minutes) for this event
   List<Reminder>? reminders;
@@ -57,6 +61,12 @@ class Event {
   /// Indicates when the original occurrence of the event starts
   /// This is only used when the event is a detached event from a recurring event series (For iOS only)
   TZDateTime? eventOriginalOccurrenceDate;
+
+  /// The timezone for the start time
+  String? startTimeZone;
+
+  /// The timezone for the end time
+  String? endTimeZone;
 
   ///Note for development:
   ///
@@ -83,7 +93,9 @@ class Event {
       this.allDay = false,
       this.status,
       this.eventIsDetached = false,
-      this.eventOriginalOccurrenceDate});
+      this.eventOriginalOccurrenceDate,
+      this.startTimeZone,
+      this.endTimeZone});
 
   ///Get Event from JSON.
   ///
@@ -93,73 +105,61 @@ class Event {
     if (json == null) {
       throw ArgumentError(ErrorMessages.fromJsonMapIsNull);
     }
-    String? foundUrl;
-    String? startLocationName;
-    String? endLocationName;
-    int? startTimestamp;
-    int? endTimestamp;
-    bool legacyJSON = false;
-    var legacyName = {
-      title: 'title',
-      description: 'description',
-      startTimestamp: 'start',
-      endTimestamp: 'end',
-      startLocationName: 'startTimeZone',
-      endLocationName: 'endTimeZone',
-      allDay: 'allDay',
-      location: 'location',
-      foundUrl: 'url',
-    };
-    legacyName.forEach((key, value) {
-      if (json[value] != null) {
-        key = json[value];
-        legacyJSON = true;
-      }
-    });
 
     eventId = json['eventId'];
     calendarId = json['calendarId'];
     title = json['eventTitle'];
     description = json['eventDescription'];
 
-    startTimestamp = json['eventStartDate'];
-    startLocationName = json['eventStartTimeZone'];
-    var startTimeZone = timeZoneDatabase.locations[startLocationName];
-    startTimeZone ??= local;
+    final startTimestamp = json['eventStartDate'] as int?;
+    startTimeZone = json['eventStartTimeZone'] as String?;
+    final startLocation = startTimeZone != null
+        ? _getLocationOrUtc(startTimeZone!)
+        : _getLocationOrUtc('local');
     start = startTimestamp != null
-        ? TZDateTime.fromMillisecondsSinceEpoch(startTimeZone, startTimestamp)
-        : TZDateTime.now(local);
+        ? TZDateTime.fromMillisecondsSinceEpoch(startLocation, startTimestamp)
+        : TZDateTime.now(startLocation);
 
-    endTimestamp = json['eventEndDate'];
-    endLocationName = json['eventEndTimeZone'];
-    var endLocation = timeZoneDatabase.locations[endLocationName];
-    endLocation ??= startTimeZone;
+    final endTimestamp = json['eventEndDate'] as int?;
+    endTimeZone = json['eventEndTimeZone'] as String?;
+    final endLocation =
+        endTimeZone != null ? _getLocationOrUtc(endTimeZone!) : startLocation;
     end = endTimestamp != null
         ? TZDateTime.fromMillisecondsSinceEpoch(endLocation, endTimestamp)
-        : TZDateTime.now(local);
+        : TZDateTime.now(endLocation);
+
     allDay = json['eventAllDay'] ?? false;
     if (Platform.isAndroid && (allDay ?? false)) {
       // On Android, the datetime in an allDay event is adjusted to local
       // timezone, which can result in the wrong day, so we need to bring the
       // date back to midnight UTC to get the correct date
-      var startOffset = start?.timeZoneOffset.inMilliseconds ?? 0;
-      var endOffset = end?.timeZoneOffset.inMilliseconds ?? 0;
-      // subtract the offset to get back to midnight on the correct date
-      start = start?.subtract(Duration(milliseconds: startOffset));
-      end = end?.subtract(Duration(milliseconds: endOffset));
-      // The Event End Date for allDay events is midnight of the next day, so
-      // subtract one day
-      end = end?.subtract(const Duration(days: 1));
+      if (start != null) {
+        final startUtc = start!.toUtc();
+        start = TZDateTime.utc(
+          startUtc.year,
+          startUtc.month,
+          startUtc.day,
+        );
+      }
+      if (end != null) {
+        final endUtc = end!.toUtc();
+        end = TZDateTime.utc(
+          endUtc.year,
+          endUtc.month,
+          endUtc.day,
+        ).subtract(const Duration(days: 1));
+      }
     }
+
     location = json['eventLocation'];
     availability = parseStringToAvailability(json['availability']);
     status = parseStringToEventStatus(json['eventStatus']);
 
-    foundUrl = json['eventURL']?.toString();
+    final foundUrl = json['eventURL']?.toString();
     if (foundUrl?.isEmpty ?? true) {
       url = null;
     } else {
-      url = Uri.dataFromString(foundUrl as String);
+      url = Uri.dataFromString(foundUrl!);
     }
 
     if (json['attendees'] != null) {
@@ -182,52 +182,54 @@ class Event {
 
     eventIsDetached = json['eventIsDetached'];
 
-    var occurrenceDateTimestamp = json['eventOccurrenceDate'];
+    final occurrenceDateTimestamp = json['eventOccurrenceDate'] as int?;
     eventOriginalOccurrenceDate = occurrenceDateTimestamp != null
         ? TZDateTime.fromMillisecondsSinceEpoch(
-            startTimeZone, occurrenceDateTimestamp)
+            startLocation, occurrenceDateTimestamp)
         : null;
 
     if (json['recurrenceRule'] != null) {
-      // debugPrint(
-      //     "EVENT_MODEL: $title; START: $start, END: $end RRULE = ${json['recurrenceRule']}");
-
-      //TODO: If we don't cast it to List<String>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'byday'')
-      if (json['recurrenceRule']['byday'] != null) {
-        json['recurrenceRule']['byday'] =
-            json['recurrenceRule']['byday'].cast<String>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'bymonthday'')
-      if (json['recurrenceRule']['bymonthday'] != null) {
-        json['recurrenceRule']['bymonthday'] =
-            json['recurrenceRule']['bymonthday'].cast<int>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'byyearday'')
-      if (json['recurrenceRule']['byyearday'] != null) {
-        json['recurrenceRule']['byyearday'] =
-            json['recurrenceRule']['byyearday'].cast<int>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'byweekno'')
-      if (json['recurrenceRule']['byweekno'] != null) {
-        json['recurrenceRule']['byweekno'] =
-            json['recurrenceRule']['byweekno'].cast<int>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'bymonth'')
-      if (json['recurrenceRule']['bymonth'] != null) {
-        json['recurrenceRule']['bymonth'] =
-            json['recurrenceRule']['bymonth'].cast<int>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'bysetpos'')
-      if (json['recurrenceRule']['bysetpos'] != null) {
-        json['recurrenceRule']['bysetpos'] =
-            json['recurrenceRule']['bysetpos'].cast<int>();
-      }
-      // debugPrint("EVENT_MODEL: $title; RRULE = ${json['recurrenceRule']}");
       try {
-        if (json['recurrenceRule'] != null) {
-          recurrenceRule = RecurrenceRule.fromJson(json['recurrenceRule']);
+        final rruleJson = json['recurrenceRule'] as Map<String, dynamic>;
+        print('Parsing recurrence rule: $rruleJson');
+        if (rruleJson['freq'] == null &&
+            rruleJson['recurrenceFrequency'] != null) {
+          // Android format
+          final androidFreq = rruleJson['recurrenceFrequency'] as int;
+          final freq = _androidFrequencyToRrule(androidFreq);
+          final interval = rruleJson['interval'] as int? ?? 1;
+          final daysOfWeek =
+              (rruleJson['daysOfWeek'] as List<dynamic>?)?.cast<int>() ?? [];
+          final weekOfMonth = rruleJson['weekOfMonth'] as int?;
+          final dayOfMonth = rruleJson['dayOfMonth'] as int?;
+          final monthOfYear = rruleJson['monthOfYear'] as int?;
+
+          // Convert Android weekdays (1-7, starting with Sunday) to rrule weekdays
+          final byWeekDay = daysOfWeek.map((day) {
+            final weekday = _androidWeekdayToRrule(day);
+            return rrule.ByWeekDayEntry(weekday, weekOfMonth);
+          }).toList();
+
+          final rule = rrule.RecurrenceRule(
+            frequency: freq,
+            interval: interval,
+            byWeekDays: byWeekDay,
+            byMonthDays: dayOfMonth != null ? [dayOfMonth] : [],
+            byMonths: monthOfYear != null ? [monthOfYear] : [],
+          );
+
+          recurrenceRule = rule;
+        } else {
+          // RFC format string
+          final rfcString =
+              rruleJson['freq'] != null ? _jsonToRfcString(rruleJson) : null;
+          print('Generated RFC string: $rfcString');
+          if (rfcString != null) {
+            recurrenceRule = rrule.RecurrenceRule.fromString(rfcString);
+          }
         }
       } catch (e, stackTrace) {
+        print('Error parsing recurrence rule: $e');
         FlutterError.reportError(FlutterErrorDetails(
           exception: e,
           stack: stackTrace,
@@ -238,17 +240,12 @@ class Event {
           ],
         ));
       }
-      // debugPrint("EVENT_MODEL_recurrenceRule: ${recurrenceRule.toString()}");
     }
 
     if (json['reminders'] != null) {
       reminders = json['reminders'].map<Reminder>((decodedReminder) {
         return Reminder.fromJson(decodedReminder);
       }).toList();
-    }
-    if (legacyJSON) {
-      throw const FormatException(
-          'legacy JSON detected. Please update your current JSONs as they may not be supported later on.');
     }
   }
 
@@ -259,12 +256,10 @@ class Event {
     data['eventId'] = eventId;
     data['eventTitle'] = title;
     data['eventDescription'] = description;
-    data['eventStartDate'] = start?.millisecondsSinceEpoch ??
-        TZDateTime.now(local).millisecondsSinceEpoch;
-    data['eventStartTimeZone'] = start?.location.name;
-    data['eventEndDate'] = end?.millisecondsSinceEpoch ??
-        TZDateTime.now(local).millisecondsSinceEpoch;
-    data['eventEndTimeZone'] = end?.location.name;
+    data['eventStartDate'] = start?.millisecondsSinceEpoch;
+    data['eventStartTimeZone'] = startTimeZone;
+    data['eventEndDate'] = end?.millisecondsSinceEpoch;
+    data['eventEndTimeZone'] = endTimeZone;
     data['eventAllDay'] = allDay;
     data['eventLocation'] = location;
     data['eventURL'] = url?.data?.contentText;
@@ -284,14 +279,28 @@ class Event {
     }
 
     if (recurrenceRule != null) {
-      data['recurrenceRule'] = recurrenceRule?.toJson();
-      // print("EVENT_TO_JSON_RRULE: ${recurrenceRule?.toJson()}");
+      data['recurrenceRule'] = {
+        'freq':
+            recurrenceRule!.frequency.toString().split('.').last.toUpperCase(),
+        'interval': recurrenceRule!.interval,
+        if (recurrenceRule!.byWeekDays.isNotEmpty)
+          'byWeekDays': recurrenceRule!.byWeekDays
+              .map((wd) => {
+                    'day': _rruleWeekdayToAndroid(wd.day),
+                    'weekNumber': wd.occurrence,
+                  })
+              .toList(),
+        if (recurrenceRule!.byMonthDays.isNotEmpty)
+          'byMonthDays': recurrenceRule!.byMonthDays,
+        if (recurrenceRule!.byMonths.isNotEmpty)
+          'byMonth': recurrenceRule!.byMonths,
+      };
     }
 
     if (reminders != null) {
       data['reminders'] = reminders?.map((r) => r.toJson()).toList();
     }
-    // debugPrint("EVENT_TO_JSON: $data");
+
     return data;
   }
 
@@ -326,10 +335,10 @@ class Event {
   }
 
   bool updateStartLocation(String? newStartLocation) {
-    if (newStartLocation == null) return false;
+    if (newStartLocation == null || start == null) return false;
     try {
-      var location = timeZoneDatabase.get(newStartLocation);
-      start = TZDateTime.from(start as TZDateTime, location);
+      final location = getLocation(newStartLocation);
+      start = TZDateTime.from(start!, location);
       return true;
     } on LocationNotFoundException {
       return false;
@@ -337,13 +346,126 @@ class Event {
   }
 
   bool updateEndLocation(String? newEndLocation) {
-    if (newEndLocation == null) return false;
+    if (newEndLocation == null || end == null) return false;
     try {
-      var location = timeZoneDatabase.get(newEndLocation);
-      end = TZDateTime.from(end as TZDateTime, location);
+      final location = getLocation(newEndLocation);
+      end = TZDateTime.from(end!, location);
       return true;
     } on LocationNotFoundException {
       return false;
+    }
+  }
+
+  TZDateTime? getStartWithTimezone() {
+    if (start == null) return null;
+    final location = startTimeZone != null
+        ? getLocation(startTimeZone!)
+        : getLocation('local');
+    return TZDateTime.from(start!, location);
+  }
+
+  TZDateTime? getEndWithTimezone() {
+    if (end == null) return null;
+    final location =
+        endTimeZone != null ? getLocation(endTimeZone!) : getLocation('local');
+    return TZDateTime.from(end!, location);
+  }
+
+  rrule.Frequency _androidFrequencyToRrule(int androidFreq) {
+    switch (androidFreq) {
+      case 0: // FREQ_DAILY
+        return rrule.Frequency.daily;
+      case 1: // FREQ_WEEKLY
+        return rrule.Frequency.weekly;
+      case 2: // FREQ_MONTHLY
+        return rrule.Frequency.monthly;
+      case 3: // FREQ_YEARLY
+        return rrule.Frequency.yearly;
+      default:
+        throw ArgumentError('Invalid Android frequency: $androidFreq');
+    }
+  }
+
+  int _rruleWeekdayToAndroid(int rruleWeekday) {
+    // Convert from DateTime weekday (1-7, starting with Monday) to Android weekday (1-7, starting with Sunday)
+    // DateTime: MON=1, TUE=2, WED=3, THU=4, FRI=5, SAT=6, SUN=7
+    // Android: SUN=1, MON=2, TUE=3, WED=4, THU=5, FRI=6, SAT=7
+    return rruleWeekday == DateTime.sunday ? 1 : rruleWeekday + 1;
+  }
+
+  int _androidWeekdayToRrule(int androidWeekday) {
+    // Convert from Android weekday (1-7, starting with Sunday) to DateTime weekday (1-7, starting with Monday)
+    // Android: SUN=1, MON=2, TUE=3, WED=4, THU=5, FRI=6, SAT=7
+    // DateTime: MON=1, TUE=2, WED=3, THU=4, FRI=5, SAT=6, SUN=7
+    return androidWeekday == 1 ? DateTime.sunday : androidWeekday - 1;
+  }
+
+  String _jsonToRfcString(Map<String, dynamic> json) {
+    final parts = <String>[];
+
+    // Add frequency
+    final freq = json['freq'] as String;
+    parts.add('FREQ=$freq');
+
+    // Add interval if present
+    final interval = json['interval'] as int?;
+    if (interval != null && interval > 1) {
+      parts.add('INTERVAL=$interval');
+    }
+
+    // Add byWeekDays if present
+    final byWeekDays = json['byWeekDays'] as List<dynamic>?;
+    if (byWeekDays != null && byWeekDays.isNotEmpty) {
+      final days = byWeekDays.map((wd) {
+        final day = wd['day'] as int;
+        final weekNumber = wd['weekNumber'] as int?;
+        final weekday = _androidWeekdayToRruleString(day);
+        return weekNumber != null ? '$weekNumber$weekday' : weekday;
+      }).join(',');
+      parts.add('BYDAY=$days');
+    }
+
+    // Add byMonthDays if present
+    final byMonthDays = json['byMonthDays'] as List<dynamic>?;
+    if (byMonthDays != null && byMonthDays.isNotEmpty) {
+      parts.add('BYMONTHDAY=${byMonthDays.join(',')}');
+    }
+
+    // Add byMonth if present
+    final byMonth = json['byMonth'] as List<dynamic>?;
+    if (byMonth != null && byMonth.isNotEmpty) {
+      parts.add('BYMONTH=${byMonth.join(',')}');
+    }
+
+    return 'RRULE:${parts.join(';')}';
+  }
+
+  String _androidWeekdayToRruleString(int androidWeekday) {
+    switch (androidWeekday) {
+      case 1:
+        return 'SU';
+      case 2:
+        return 'MO';
+      case 3:
+        return 'TU';
+      case 4:
+        return 'WE';
+      case 5:
+        return 'TH';
+      case 6:
+        return 'FR';
+      case 7:
+        return 'SA';
+      default:
+        throw ArgumentError('Invalid Android weekday: $androidWeekday');
+    }
+  }
+
+  Location _getLocationOrUtc(String name) {
+    try {
+      return getLocation(name);
+    } on LocationNotFoundException {
+      return getLocation('UTC');
     }
   }
 }

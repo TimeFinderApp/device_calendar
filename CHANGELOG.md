@@ -206,3 +206,11 @@
 
 - Ability to retrieve device calendars
 - CRUD operations on calendar events
+
+## 4.4.0
+
+* BREAKING: Migrated to use `rrule` package for recurrence handling
+* BREAKING: Removed custom `RecurrenceRule` implementation
+* BREAKING: Changed recurrence rule format to RFC format
+* Improved timezone handling with UTC fallback
+* Added comprehensive test coverage for recurrence patterns
