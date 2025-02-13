@@ -23,7 +23,6 @@ class Constants {
             CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,         // 5
             CalendarContract.Calendars.CALENDAR_COLOR,                // 6
             CalendarContract.Calendars.IS_PRIMARY                     // 7
-
         )
 
         // API 16 or lower
@@ -42,31 +41,31 @@ class Constants {
         const val EVENT_PROJECTION_DESCRIPTION_INDEX: Int = 2
         const val EVENT_PROJECTION_BEGIN_INDEX: Int = 3
         const val EVENT_PROJECTION_END_INDEX: Int = 4
-        const val EVENT_PROJECTION_RECURRING_RULE_INDEX: Int = 7
-        const val EVENT_PROJECTION_ALL_DAY_INDEX: Int = 8
-        const val EVENT_PROJECTION_EVENT_LOCATION_INDEX: Int = 9
-        const val EVENT_PROJECTION_CUSTOM_APP_URI_INDEX: Int = 10
-        const val EVENT_PROJECTION_START_TIMEZONE_INDEX: Int = 11
-        const val EVENT_PROJECTION_END_TIMEZONE_INDEX: Int = 12
-        const val EVENT_PROJECTION_AVAILABILITY_INDEX: Int = 13
-        const val EVENT_PROJECTION_STATUS_INDEX: Int = 14
+        const val EVENT_PROJECTION_EVENT_LOCATION_INDEX: Int = 5
+        const val EVENT_PROJECTION_RECURRING_RULE_INDEX: Int = 6
+        const val EVENT_PROJECTION_ALL_DAY_INDEX: Int = 7
+        const val EVENT_PROJECTION_CUSTOM_APP_URI_INDEX: Int = 8
+        const val EVENT_PROJECTION_START_TIMEZONE_INDEX: Int = 9
+        const val EVENT_PROJECTION_END_TIMEZONE_INDEX: Int = 10
+        const val EVENT_PROJECTION_AVAILABILITY_INDEX: Int = 11
+        const val EVENT_PROJECTION_STATUS_INDEX: Int = 12
+        const val EVENT_PROJECTION_ORIGINAL_ID_INDEX: Int = 13
 
         val EVENT_PROJECTION: Array<String> = arrayOf(
-                CalendarContract.Instances.EVENT_ID,
-                CalendarContract.Events.TITLE,
-                CalendarContract.Events.DESCRIPTION,
-                CalendarContract.Instances.BEGIN,
-                CalendarContract.Instances.END,
-                CalendarContract.Instances.DURATION,
-                CalendarContract.Events.RDATE,
-                CalendarContract.Events.RRULE,
-                CalendarContract.Events.ALL_DAY,
-                CalendarContract.Events.EVENT_LOCATION,
-                CalendarContract.Events.CUSTOM_APP_URI,
-                CalendarContract.Events.EVENT_TIMEZONE,
-                CalendarContract.Events.EVENT_END_TIMEZONE,
-                CalendarContract.Events.AVAILABILITY,
-                CalendarContract.Events.STATUS
+            CalendarContract.Instances.EVENT_ID,            // 0
+            CalendarContract.Events.TITLE,                  // 1
+            CalendarContract.Events.DESCRIPTION,            // 2
+            CalendarContract.Instances.BEGIN,               // 3
+            CalendarContract.Instances.END,                 // 4
+            CalendarContract.Events.EVENT_LOCATION,         // 5
+            CalendarContract.Events.RRULE,                  // 6
+            CalendarContract.Events.ALL_DAY,                // 7
+            CalendarContract.Events.CUSTOM_APP_URI,         // 8
+            CalendarContract.Events.EVENT_TIMEZONE,         // 9
+            CalendarContract.Events.EVENT_END_TIMEZONE,     // 10
+            CalendarContract.Events.AVAILABILITY,           // 11
+            CalendarContract.Events.STATUS,                 // 12
+            CalendarContract.Events.ORIGINAL_ID             // 13
         )
 
         const val EVENT_INSTANCE_DELETION_ID_INDEX: Int = 0

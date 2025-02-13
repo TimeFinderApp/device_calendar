@@ -52,6 +52,7 @@ import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTIO
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_END_TIMEZONE_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_EVENT_LOCATION_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_ID_INDEX
+import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_ORIGINAL_ID_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_RECURRING_RULE_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_START_TIMEZONE_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_STATUS_INDEX
@@ -331,15 +332,15 @@ class CalendarDelegate(
             ContentUris.appendId(eventsUriBuilder, endDate ?: Date(Long.MAX_VALUE).time)
 
             val eventsUri = eventsUriBuilder.build()
-            val eventsCalendarQuery = "(${Events.CALENDAR_ID} = $calendarId)"
-            val eventsNotDeletedQuery = "(${Events.DELETED} != 1)"
+            val eventsCalendarQuery = "(${CalendarContract.Instances.CALENDAR_ID} = $calendarId)"
+            val eventsNotDeletedQuery = "(${CalendarContract.Instances.EVENT_ID} IN (SELECT ${CalendarContract.Events._ID} FROM ${CalendarContract.Events.CONTENT_URI.lastPathSegment} WHERE ${CalendarContract.Events.DELETED} != 1))"
             val eventsIdsQuery = "(${CalendarContract.Instances.EVENT_ID} IN (${eventIds.joinToString()}))"
 
             var eventsSelectionQuery = "$eventsCalendarQuery AND $eventsNotDeletedQuery"
             if (eventIds.isNotEmpty()) {
                 eventsSelectionQuery += " AND ($eventsIdsQuery)"
             }
-            val eventsSortOrder = Events.DTSTART + " DESC"
+            val eventsSortOrder = CalendarContract.Instances.BEGIN + " DESC"
 
             val eventsCursor = contentResolver?.query(eventsUri, EVENT_PROJECTION, eventsSelectionQuery, null, eventsSortOrder)
 
@@ -773,6 +774,7 @@ class CalendarDelegate(
         val endTimeZone = cursor.getString(EVENT_PROJECTION_END_TIMEZONE_INDEX)
         val availability = parseAvailability(cursor.getInt(EVENT_PROJECTION_AVAILABILITY_INDEX))
         val eventStatus = parseEventStatus(cursor.getInt(EVENT_PROJECTION_STATUS_INDEX))
+        val originalId = cursor.getString(EVENT_PROJECTION_ORIGINAL_ID_INDEX)
 
         val event = Event()
         event.eventTitle = title ?: "New Event"
@@ -784,7 +786,46 @@ class CalendarDelegate(
         event.eventAllDay = allDay
         event.eventLocation = location
         event.eventURL = url
-        event.recurrenceRule = parseRecurrenceRuleString(recurringRule)
+        
+        // For the first occurrence of a recurring event, recurringRule will be set
+        // For subsequent occurrences, originalId will be set
+        // We need to check the Events table for the first occurrence to see if it's part of a series
+        if (recurringRule != null) {
+            event.recurrenceRule = parseRecurrenceRuleString(recurringRule)
+        } else if (originalId != null) {
+            // This is a subsequent occurrence, so we need to get the recurrence rule from the original event
+            val originalEventUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, originalId.toLong())
+            val originalEventCursor = _context?.contentResolver?.query(
+                originalEventUri,
+                arrayOf(CalendarContract.Events.RRULE),
+                null,
+                null,
+                null
+            )
+            if (originalEventCursor?.moveToFirst() == true) {
+                val originalRecurringRule = originalEventCursor.getString(0)
+                event.recurrenceRule = parseRecurrenceRuleString(originalRecurringRule)
+            }
+            originalEventCursor?.close()
+        } else {
+            // Check if this is the first occurrence of a recurring series
+            val eventUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+            val eventCursor = _context?.contentResolver?.query(
+                eventUri,
+                arrayOf(CalendarContract.Events.RRULE),
+                null,
+                null,
+                null
+            )
+            if (eventCursor?.moveToFirst() == true) {
+                val eventRecurringRule = eventCursor.getString(0)
+                if (eventRecurringRule != null) {
+                    event.recurrenceRule = parseRecurrenceRuleString(eventRecurringRule)
+                }
+            }
+            eventCursor?.close()
+        }
+        
         event.eventStartTimeZone = startTimeZone
         event.eventEndTimeZone = endTimeZone
         event.availability = availability

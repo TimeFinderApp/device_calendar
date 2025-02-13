@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../device_calendar.dart';
 import '../common/error_messages.dart';
+import '../common/recurrence_rule_converter.dart';
 
 /// An event associated with a calendar
 class Event {
@@ -189,41 +190,42 @@ class Event {
         : null;
 
     if (json['recurrenceRule'] != null) {
-      // debugPrint(
-      //     "EVENT_MODEL: $title; START: $start, END: $end RRULE = ${json['recurrenceRule']}");
-
-      //TODO: If we don't cast it to List<String>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'byday'')
-      if (json['recurrenceRule']['byday'] != null) {
-        json['recurrenceRule']['byday'] =
-            json['recurrenceRule']['byday'].cast<String>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'bymonthday'')
-      if (json['recurrenceRule']['bymonthday'] != null) {
-        json['recurrenceRule']['bymonthday'] =
-            json['recurrenceRule']['bymonthday'].cast<int>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'byyearday'')
-      if (json['recurrenceRule']['byyearday'] != null) {
-        json['recurrenceRule']['byyearday'] =
-            json['recurrenceRule']['byyearday'].cast<int>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'byweekno'')
-      if (json['recurrenceRule']['byweekno'] != null) {
-        json['recurrenceRule']['byweekno'] =
-            json['recurrenceRule']['byweekno'].cast<int>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'bymonth'')
-      if (json['recurrenceRule']['bymonth'] != null) {
-        json['recurrenceRule']['bymonth'] =
-            json['recurrenceRule']['bymonth'].cast<int>();
-      }
-      //TODO: If we don't cast it to List<int>, the rrule package throws an error as it detects it as List<dynamic> ('Invalid JSON in 'bysetpos'')
-      if (json['recurrenceRule']['bysetpos'] != null) {
-        json['recurrenceRule']['bysetpos'] =
-            json['recurrenceRule']['bysetpos'].cast<int>();
-      }
-      // debugPrint("EVENT_MODEL: $title; RRULE = ${json['recurrenceRule']}");
       try {
+        if (Platform.isAndroid) {
+          // Convert Android format to RFC format
+          final rfc = RecurrenceRuleConverter.toRfc(json['recurrenceRule']);
+          if (rfc != null) {
+            // Parse the RFC format string back to a map that rrule package can understand
+            final rfcMap = {
+              'freq': rfc
+                  .split(';')
+                  .firstWhere((part) => part.startsWith('FREQ='))
+                  .substring(5),
+              'interval': json['recurrenceRule']['interval'],
+            };
+
+            // Add BYDAY if present
+            final bydayPart = rfc
+                .split(';')
+                .firstWhereOrNull((part) => part.startsWith('BYDAY='));
+            if (bydayPart != null) {
+              rfcMap['byday'] = bydayPart.substring(6).split(',');
+            }
+
+            // Add other parts if present
+            for (final part in ['BYMONTHDAY', 'BYMONTH']) {
+              final value = rfc
+                  .split(';')
+                  .firstWhereOrNull((p) => p.startsWith('$part='));
+              if (value != null) {
+                rfcMap[part.toLowerCase()] = [int.parse(value.split('=')[1])];
+              }
+            }
+
+            json['recurrenceRule'] = rfcMap;
+          }
+        }
+
         if (json['recurrenceRule'] != null) {
           recurrenceRule = RecurrenceRule.fromJson(json['recurrenceRule']);
         }
@@ -238,7 +240,6 @@ class Event {
           ],
         ));
       }
-      // debugPrint("EVENT_MODEL_recurrenceRule: ${recurrenceRule.toString()}");
     }
 
     if (json['reminders'] != null) {
