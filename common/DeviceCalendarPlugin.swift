@@ -131,6 +131,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         let priority: Int
         let isCompleted: Bool
         let notes: String?
+        let lastModifiedDate: Date?
 
         init(reminder: EKReminder) {
             self.list = List(list: reminder.calendar)
@@ -140,6 +141,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             self.priority = reminder.priority
             self.isCompleted = reminder.isCompleted
             self.notes = reminder.notes
+            self.lastModifiedDate = reminder.lastModifiedDate
         }
 
         func toJson() -> String? {
@@ -1374,7 +1376,12 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             eventStore.fetchReminders(matching: predicate) { reminders in
                 let rems = reminders ?? []
                 let resultArray = rems.map { Reminder(reminder: $0) }
-                let json = try? JSONEncoder().encode(resultArray)
+                
+                // Configure JSONEncoder with ISO8601 date formatting for proper parsing on the Dart side
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                
+                let json = try? encoder.encode(resultArray)
                 result(String(data: json ?? Data(), encoding: .utf8))
             }
         } else {

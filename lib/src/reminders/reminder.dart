@@ -8,6 +8,7 @@ class Reminder {
   int priority;
   bool isCompleted;
   String? notes;
+  DateTime? lastModifiedDate;
 
   Reminder(
       {required this.list,
@@ -16,7 +17,8 @@ class Reminder {
       this.dueDate,
       this.priority = 0,
       this.isCompleted = false,
-      this.notes});
+      this.notes,
+      this.lastModifiedDate});
 
   Reminder.fromJson(Map<String, dynamic> json)
       : list = RemList.fromJson(json['list']),
@@ -29,6 +31,24 @@ class Reminder {
       final date = json['dueDate'];
       dueDate = DateTime(date['year']!, date['month']!, date['day']!,
           date['hour'] ?? 00, date['minute'] ?? 00, date['second'] ?? 00);
+    }
+
+    if (json['lastModifiedDate'] != null) {
+      if (json['lastModifiedDate'] is DateTime) {
+        lastModifiedDate = json['lastModifiedDate'] as DateTime;
+      } else if (json['lastModifiedDate'] is String) {
+        lastModifiedDate = DateTime.parse(json['lastModifiedDate'] as String);
+      } else if (json['lastModifiedDate'] is Map) {
+        final date = json['lastModifiedDate'];
+        lastModifiedDate = DateTime(
+          date['year'] ?? 1970,
+          date['month'] ?? 1,
+          date['day'] ?? 1,
+          date['hour'] ?? 0,
+          date['minute'] ?? 0,
+          date['second'] ?? 0,
+        );
+      }
     }
   }
 
@@ -48,11 +68,12 @@ class Reminder {
               },
         'priority': priority,
         'isCompleted': isCompleted,
-        'notes': notes
+        'notes': notes,
+        'lastModifiedDate': lastModifiedDate?.toIso8601String(),
       };
 
   @override
   String toString() =>
       '''List: ${list.title}\tTitle: $title\tdueDate: $dueDate\tPriority: 
-      $priority\tisComplete: $isCompleted\tNotes: $notes\tID: $id''';
+      $priority\tisComplete: $isCompleted\tNotes: $notes\tID: $id\tLastModified: $lastModifiedDate''';
 }
