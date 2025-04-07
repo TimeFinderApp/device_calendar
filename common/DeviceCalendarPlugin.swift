@@ -153,10 +153,14 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     struct List: Codable {
         let title: String
         let id: String
+        let color: Int?
 
         init(list: EKCalendar) {
             self.title = list.title
             self.id = list.calendarIdentifier
+            
+            // Extract color from EKCalendar
+            self.color = DeviceCalendarPlugin.getColorFromCalendar(list)
         }
 
         func toJson() -> String? {
@@ -419,11 +423,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 let defaultCalendar = self.eventStore.defaultCalendarForNewEvents
                 var calendars = [DeviceCalendar]()
                 for ekCalendar in ekCalendars {
-#if os(macOS)
-                    let calendarColor = ekCalendar.color.rgb()!
-#elseif os(iOS)
-                    let calendarColor = UIColor(cgColor: ekCalendar.cgColor).rgb()!
-#endif
+                    let calendarColor = DeviceCalendarPlugin.getColorFromCalendar(ekCalendar)!
                     let calendar = DeviceCalendar(
                         id: ekCalendar.calendarIdentifier,
                         name: ekCalendar.title,
@@ -1456,6 +1456,16 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         @unknown default:
             result("unknown")
         }
+    }
+
+    private static func getColorFromCalendar(_ calendar: EKCalendar) -> Int? {
+        #if os(macOS)
+        return calendar.color.rgb()
+        #elseif os(iOS)
+        // iOS: EKCalendar has cgColor not color property
+        // See: https://developer.apple.com/documentation/eventkit/ekcalendar/1615894-cgcolor
+        return UIColor(cgColor: calendar.cgColor).rgb()
+        #endif
     }
 }
 
