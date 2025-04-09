@@ -1369,7 +1369,12 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     private func getReminders(_ id: String?, _ result: @escaping FlutterResult) {
         var calendar: [EKCalendar]? = nil
         if let id = id {
-            calendar = [eventStore.calendar(withIdentifier: id) ?? EKCalendar()]
+            if let foundCalendar = eventStore.calendar(withIdentifier: id) {
+                calendar = [foundCalendar]
+            } else {
+                result(FlutterError(code: "CALENDAR_NOT_FOUND", message: "Calendar with ID \(id) not found", details: nil))
+                return
+            }
         }
         let predicate: NSPredicate? = eventStore.predicateForReminders(in: calendar)
         if let predicate = predicate {
