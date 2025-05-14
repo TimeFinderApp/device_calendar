@@ -639,12 +639,6 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     
     private func parseEKRecurrenceRules(_ ekEvent: EKEvent) -> RecurrenceRule? {
         var recurrenceRule: RecurrenceRule?
-
-        // MZ - Added for debugging purposes
-        if ekEvent.isDetached {
-            print("Debug: The event with ID \(ekEvent.eventIdentifier ?? "unknown") is a detached occurrence from its recurrence rule.")
-        }
-
         if ekEvent.hasRecurrenceRules {
             let ekRecurrenceRule = ekEvent.recurrenceRules![0]
             var frequency: String
@@ -693,7 +687,6 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 sourceRruleString: rruleStringFromEKRRule(ekRecurrenceRule)
             )
         }
-        //print("RECURRENCERULE_RESULT: \(recurrenceRule as AnyObject)")
         return recurrenceRule
     }
 
@@ -759,8 +752,6 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func createEKRecurrenceRules(_ arguments: [String : AnyObject]) -> [EKRecurrenceRule]?{
         let recurrenceRuleArguments = arguments[recurrenceRuleArgument] as? Dictionary<String, AnyObject>
-
-        //print("ARGUMENTS: \(recurrenceRuleArguments as AnyObject)")
 
         if recurrenceRuleArguments == nil {
             return nil
@@ -832,7 +823,6 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             daysOfTheYear: byYearDays?.map {NSNumber(value: $0)},
             setPositions: bySetPositions?.map {NSNumber(value: $0)},
             end: recurrenceEnd)
-        //print("ekrecurrenceRule: \(String(describing: ekrecurrenceRule))")
         return [ekrecurrenceRule]
     }
 
@@ -841,7 +831,6 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         var ekRRuleString = "\(ekRRuleAnyObject)"
         if let range = ekRRuleString.range(of: "RRULE ") {
             ekRRuleString = String(ekRRuleString[range.upperBound...])
-            //print("EKRULE_RESULT_STRING: \(ekRRuleString)")
         }
         return ekRRuleString
     }
@@ -1208,7 +1197,6 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             let jsonEncoder = JSONEncoder()
             let jsonData = try jsonEncoder.encode(codable)
             let jsonString = String(data: jsonData, encoding: .utf8)
-            print("JSON: \(jsonString ?? "nil")")
             result(jsonString)
         } catch {
             result(FlutterError(code: genericError, message: error.localizedDescription, details: nil))
@@ -1216,25 +1204,19 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func checkPermissionsThenExecute(permissionsGrantedAction: @escaping () -> Void, result: @escaping FlutterResult) {
-        print("Checking permissions...")
         if hasEventPermissions() {
-            print("Permissions already granted.")
             DispatchQueue.main.async {
                 permissionsGrantedAction()
             }
         } else {
-            print("Requesting permissions...")
             requestPermissions { [weak self] accessGranted in
                 guard let self = self else { 
-                    print("Self is nil, aborting.")
                     return 
                 }
                 DispatchQueue.main.async {
                     if accessGranted {
-                        print("Permissions granted.")
                         permissionsGrantedAction()
                     } else {
-                        print("Permissions not granted.")
                         self.finishWithUnauthorizedError(result: result)
                     }
                 }
@@ -1244,30 +1226,25 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     private func requestPermissions(_ completion: @escaping (Bool) -> Void) {
         if hasEventPermissions() {
-            print("Permissions already granted (checked in requestPermissions).")
             completion(true)
             return
         }
         if #available(iOS 17, macOS 14.0, *) {
-            print("Requesting full access to events for iOS 17 or later...")
             Task {
                 do {
                     try await eventStore.requestFullAccessToEvents()
                     DispatchQueue.main.async {
                         let status = EKEventStore.authorizationStatus(for: .event)
                         let accessGranted = (status == .fullAccess)
-                        print("Full access request status: \(status.rawValue), access granted: \(accessGranted)")
                         completion(accessGranted)
                     }
                 } catch {
-                    print("Error requesting full access: \(error)")
                     DispatchQueue.main.async {
                         completion(false)
                     }
                 }
             }
         } else {
-            print("Requesting access to events for iOS versions prior to 17...")
             eventStore.requestAccess(to: .event) { (accessGranted: Bool, error: Error?) in
                 if let error = error {
                     print("Error requesting access: \(error)")
@@ -1305,30 +1282,25 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     func requestPermission(completion: @escaping (Bool) -> Void) {
         if hasReminderPermission() {
-            print("Permission already granted.")
             completion(true)
             return
         }
 
         if #available(iOS 17.0, macOS 14.0, *) {
-            print("Requesting full access to reminders for iOS 17.0+ or macOS 14.0+.")
             Task {
                 do {
                     let accessGranted = try await eventStore.requestFullAccessToReminders()
                     DispatchQueue.main.async {
                         let status = EKEventStore.authorizationStatus(for: .reminder)
-                        print("Full access request completed. Access granted: \(accessGranted). Authorization status: \(status.rawValue)")
                         completion(accessGranted)
                     }
                 } catch {
-                    print("Failed to request full access to reminders with error: \(error.localizedDescription)")
                     DispatchQueue.main.async {
                         completion(false)
                     }
                 }
             }
         } else {
-            print("Requesting access to reminders for earlier versions.")
             eventStore.requestAccess(to: .reminder) { (accessGranted: Bool, error: Error?) in
                 DispatchQueue.main.async {
                     if let error = error {
@@ -1347,11 +1319,9 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         let status = EKEventStore.authorizationStatus(for: .reminder)
         if #available(iOS 17.0, macOS 14.0, *) {
             let hasPermission = (status == .fullAccess)
-            print("Authorization status for iOS 17.0+ or macOS 14.0+: \(status). Has permission: \(hasPermission)")
             return hasPermission
         } else {
             let hasPermission = (status == .authorized)
-            print("Authorization status for earlier versions: \(status). Has permission: \(hasPermission)")
             return hasPermission
         }
     }
