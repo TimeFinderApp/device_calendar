@@ -227,7 +227,9 @@ class Event {
         }
 
         if (json['recurrenceRule'] != null) {
-          recurrenceRule = RecurrenceRule.fromJson(json['recurrenceRule']);
+          // Sanitize the recurrence rule to handle malformed rules from third-party apps
+          final sanitizedRule = _sanitizeRecurrenceRule(json['recurrenceRule']);
+          recurrenceRule = RecurrenceRule.fromJson(sanitizedRule);
         }
       } catch (e, stackTrace) {
         FlutterError.reportError(FlutterErrorDetails(
@@ -346,5 +348,23 @@ class Event {
     } on LocationNotFoundException {
       return false;
     }
+  }
+
+  /// Sanitizes recurrence rule to handle malformed rules from third-party calendar apps
+  /// Following the "graceful degradation" approach similar to libical
+  static Map<String, dynamic> _sanitizeRecurrenceRule(Map<String, dynamic> rule) {
+    final sanitized = Map<String, dynamic>.from(rule);
+    final freq = sanitized['freq'] as String?;
+    
+    // Handle RFC 5545 violation: BYYEARDAY MUST NOT be specified for DAILY, WEEKLY, or MONTHLY
+    if (freq != null && ['DAILY', 'WEEKLY', 'MONTHLY'].contains(freq.toUpperCase())) {
+      if (sanitized.containsKey('byyearday')) {
+        print('WARNING: Removing BYYEARDAY from $freq recurrence rule (RFC 5545 violation)');
+        print('Event may have been created by third-party calendar app with relaxed validation');
+        sanitized.remove('byyearday');
+      }
+    }
+    
+    return sanitized;
   }
 }
