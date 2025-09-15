@@ -585,7 +585,8 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             availability: convertEkEventAvailability(ekEventAvailability: ekEvent.availability),
             eventStatus: convertEkEventStatus(ekEventStatus: ekEvent.status),
             eventIsDetached: ekEvent.isDetached,
-            eventOccurrenceDate: Int64(ekEvent.occurrenceDate.millisecondsSinceEpoch)
+            // For non-recurring events, occurrenceDate is nil - use startDate as fallback
+            eventOccurrenceDate: ekEvent.occurrenceDate != nil ? Int64(ekEvent.occurrenceDate!.millisecondsSinceEpoch) : Int64(ekEvent.startDate.millisecondsSinceEpoch)
         )
 
         return event
