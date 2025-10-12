@@ -961,7 +961,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             let arguments = call.arguments as! Dictionary<String, AnyObject>
             let calendarId = arguments[self.calendarIdArgument] as! String
             let eventId = arguments[self.eventIdArgument] as? String
-            let isAllDay = arguments[self.eventAllDayArgument] as! Bool
+            let isAllDay = (arguments[self.eventAllDayArgument] as? Bool) ?? false
             let startDateMillisecondsSinceEpoch = arguments[self.eventStartDateArgument] as! NSNumber
             let endDateDateMillisecondsSinceEpoch = arguments[self.eventEndDateArgument] as! NSNumber
             let startDate = Date (timeIntervalSince1970: startDateMillisecondsSinceEpoch.doubleValue / 1000.0)
