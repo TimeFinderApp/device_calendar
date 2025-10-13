@@ -839,44 +839,51 @@ class CalendarDelegate(
             return null
         }
 
-        val rfcRecurrenceRule = org.dmfs.rfc5545.recur.RecurrenceRule(recurrenceRuleString)
-        val frequency = when (rfcRecurrenceRule.freq) {
-            Freq.YEARLY -> RecurrenceFrequency.YEARLY
-            Freq.MONTHLY -> RecurrenceFrequency.MONTHLY
-            Freq.WEEKLY -> RecurrenceFrequency.WEEKLY
-            Freq.DAILY -> RecurrenceFrequency.DAILY
-            else -> null
-        }
-
-        val recurrenceRule = RecurrenceRule(frequency!!)
-        if (rfcRecurrenceRule.count != null) {
-            recurrenceRule.totalOccurrences = rfcRecurrenceRule.count
-        }
-
-        recurrenceRule.interval = rfcRecurrenceRule.interval
-        if (rfcRecurrenceRule.until != null) {
-            recurrenceRule.endDate = rfcRecurrenceRule.until.timestamp
-        }
-
-        when (rfcRecurrenceRule.freq) {
-            Freq.WEEKLY, Freq.MONTHLY, Freq.YEARLY -> {
-                recurrenceRule.daysOfWeek = rfcRecurrenceRule.byDayPart?.mapNotNull {
-                    DayOfWeek.values().find { dayOfWeek -> dayOfWeek.ordinal == it.weekday.ordinal }
-                }?.toMutableList()
+        return try {
+            val rfcRecurrenceRule = org.dmfs.rfc5545.recur.RecurrenceRule(recurrenceRuleString)
+            val frequency = when (rfcRecurrenceRule.freq) {
+                Freq.YEARLY -> RecurrenceFrequency.YEARLY
+                Freq.MONTHLY -> RecurrenceFrequency.MONTHLY
+                Freq.WEEKLY -> RecurrenceFrequency.WEEKLY
+                Freq.DAILY -> RecurrenceFrequency.DAILY
+                else -> null
             }
-            else -> recurrenceRule.daysOfWeek = null
-        }
 
-        val rfcRecurrenceRuleString = rfcRecurrenceRule.toString()
-        if (rfcRecurrenceRule.freq == Freq.MONTHLY || rfcRecurrenceRule.freq == Freq.YEARLY) {
-            // Get week number value from BYSETPOS
-            recurrenceRule.weekOfMonth = convertCalendarPartToNumericValues(rfcRecurrenceRuleString, BYSETPOS_PART)
-
-            // If value is not found in BYSETPOS and not repeating by nth day or nth month
-            // Get the week number value from the BYDAY position
-            if (recurrenceRule.weekOfMonth == null && rfcRecurrenceRule.byDayPart != null) {
-                recurrenceRule.weekOfMonth = rfcRecurrenceRule.byDayPart.first().pos
+            // Skip events with unsupported frequencies (HOURLY, SECONDLY, etc.)
+            if (frequency == null) {
+                Log.w("DeviceCalendar", "Skipping event with unsupported frequency: ${rfcRecurrenceRule.freq} in RRULE: $recurrenceRuleString")
+                return null
             }
+
+            val recurrenceRule = RecurrenceRule(frequency)
+            if (rfcRecurrenceRule.count != null) {
+                recurrenceRule.totalOccurrences = rfcRecurrenceRule.count
+            }
+
+            recurrenceRule.interval = rfcRecurrenceRule.interval
+            if (rfcRecurrenceRule.until != null) {
+                recurrenceRule.endDate = rfcRecurrenceRule.until.timestamp
+            }
+
+            when (rfcRecurrenceRule.freq) {
+                Freq.WEEKLY, Freq.MONTHLY, Freq.YEARLY -> {
+                    recurrenceRule.daysOfWeek = rfcRecurrenceRule.byDayPart?.mapNotNull {
+                        DayOfWeek.values().find { dayOfWeek -> dayOfWeek.ordinal == it.weekday.ordinal }
+                    }?.toMutableList()
+                }
+                else -> recurrenceRule.daysOfWeek = null
+            }
+
+            val rfcRecurrenceRuleString = rfcRecurrenceRule.toString()
+            if (rfcRecurrenceRule.freq == Freq.MONTHLY || rfcRecurrenceRule.freq == Freq.YEARLY) {
+                // Get week number value from BYSETPOS
+                recurrenceRule.weekOfMonth = convertCalendarPartToNumericValues(rfcRecurrenceRuleString, BYSETPOS_PART)
+
+                // If value is not found in BYSETPOS and not repeating by nth day or nth month
+                // Get the week number value from the BYDAY position
+                if (recurrenceRule.weekOfMonth == null && !rfcRecurrenceRule.byDayPart.isNullOrEmpty()) {
+                    recurrenceRule.weekOfMonth = rfcRecurrenceRule.byDayPart.first().pos
+                }
 
             recurrenceRule.dayOfMonth = convertCalendarPartToNumericValues(rfcRecurrenceRuleString, BYMONTHDAY_PART)
 
@@ -885,7 +892,11 @@ class CalendarDelegate(
             }
         }
 
-        return recurrenceRule
+        recurrenceRule
+        } catch (e: Exception) {
+            Log.e("DeviceCalendar", "Failed to parse RRULE string: $recurrenceRuleString", e)
+            null
+        }
     }
 
     private fun convertCalendarPartToNumericValues(rfcRecurrenceRuleString: String, partName: String): Int? {
