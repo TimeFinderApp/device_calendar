@@ -127,6 +127,11 @@ class Event {
     startLocationName = json['eventStartTimeZone'];
     var startTimeZone = timeZoneDatabase.locations[startLocationName];
     startTimeZone ??= local;
+
+    // Create TZDateTime from milliseconds in the event's reported timezone.
+    // This preserves the original timezone (e.g., "America/New_York") which
+    // matters for timed events across timezones. For all-day events, the
+    // timezone is meaningless (they represent dates, not instants).
     start = startTimestamp != null
         ? TZDateTime.fromMillisecondsSinceEpoch(startTimeZone, startTimestamp)
         : TZDateTime.now(local);
@@ -140,17 +145,44 @@ class Event {
         : TZDateTime.now(local);
     allDay = json['eventAllDay'] ?? false;
     if (Platform.isAndroid && (allDay ?? false)) {
-      // On Android, the datetime in an allDay event is adjusted to local
-      // timezone, which can result in the wrong day, so we need to bring the
-      // date back to midnight UTC to get the correct date
-      var startOffset = start?.timeZoneOffset.inMilliseconds ?? 0;
-      var endOffset = end?.timeZoneOffset.inMilliseconds ?? 0;
-      // subtract the offset to get back to midnight on the correct date
-      start = start?.subtract(Duration(milliseconds: startOffset));
-      end = end?.subtract(Duration(milliseconds: endOffset));
-      // The Event End Date for allDay events is midnight of the next day, so
-      // subtract one day
-      end = end?.subtract(const Duration(days: 1));
+      // ANDROID ALL-DAY EVENT TIMEZONE HANDLING
+      //
+      // Android CalendarContract stores all-day events using midnight UTC timestamps
+      // to ensure consistent representation across timezones (for Google Calendar sync).
+      //
+      // Storage format uses half-open intervals [start, end):
+      //   - Single day Aug 14: [Aug 14 00:00 UTC, Aug 15 00:00 UTC) = 24 hours
+      //   - Multi-day Aug 14-16: [Aug 14 00:00 UTC, Aug 17 00:00 UTC) = 72 hours
+      //   - End timestamp is midnight of the day AFTER the event (exclusive bound)
+      //
+      // The Problem:
+      //   Calling .toLocal() converts the UTC instant, shifting the date in EDT/EST:
+      //   Aug 14 00:00 UTC → Aug 13 20:00 EDT (previous day at 8 PM) ❌
+      //
+      // The Solution:
+      //   All-day events represent CALENDAR DATES, not instants in time.
+      //   We need to preserve the date components (year, month, day) from UTC
+      //   and create new local midnight times using those components.
+      //
+      // Result after correction:
+      //   Single-day Aug 14: start = Aug 14 00:00 local, end = Aug 14 00:00 local
+      //   Multi-day Aug 14-16: start = Aug 14 00:00 local, end = Aug 16 00:00 local
+      //   (TimeFinder detects single vs multi-day using DateUtils.isSameDay)
+
+      final startUtc = start?.toUtc();
+      final endUtc = end?.toUtc();
+
+      // Extract date from UTC start, create local midnight on that date
+      start = startUtc != null
+          ? TZDateTime(local, startUtc.year, startUtc.month, startUtc.day)
+          : start;
+
+      // End is exclusive bound (day after event ends). Subtract 1 day to get
+      // the actual last day of the event, then create local midnight.
+      final adjustedEndUtc = endUtc?.subtract(const Duration(days: 1));
+      end = adjustedEndUtc != null
+          ? TZDateTime(local, adjustedEndUtc.year, adjustedEndUtc.month, adjustedEndUtc.day)
+          : end;
     }
     location = json['eventLocation'];
     availability = parseStringToAvailability(json['availability']);
