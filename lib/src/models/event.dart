@@ -222,6 +222,44 @@ class Event {
               }
             }
 
+            // Add UNTIL if present
+            final untilPart = rfc
+                .split(';')
+                .firstWhereOrNull((p) => p.startsWith('UNTIL='));
+            if (untilPart != null) {
+              // Parse UNTIL date from RFC format (e.g., UNTIL=20251211T045959Z)
+              final untilStr = untilPart.substring(6); // Remove "UNTIL="
+
+              // Parse the RFC date string and convert to ISO 8601 format
+              // RFC format: YYYYMMDDTHHmmssZ -> ISO: YYYY-MM-DDTHH:mm:ssZ
+              try {
+                final year = untilStr.substring(0, 4);
+                final month = untilStr.substring(4, 6);
+                final day = untilStr.substring(6, 8);
+                final hasTime = untilStr.length > 8 && untilStr[8] == 'T';
+
+                if (hasTime) {
+                  final hour = untilStr.substring(9, 11);
+                  final minute = untilStr.substring(11, 13);
+                  final second = untilStr.substring(13, 15);
+                  rfcMap['until'] = '$year-$month-${day}T$hour:$minute:${second}Z';
+                } else {
+                  rfcMap['until'] = '$year-$month-${day}T00:00:00Z';
+                }
+              } catch (e) {
+                // If parsing fails, don't include UNTIL
+                print('Failed to parse UNTIL date: $untilStr');
+              }
+            }
+
+            // Add COUNT if present
+            final countPart = rfc
+                .split(';')
+                .firstWhereOrNull((p) => p.startsWith('COUNT='));
+            if (countPart != null) {
+              rfcMap['count'] = int.parse(countPart.substring(6));
+            }
+
             json['recurrenceRule'] = rfcMap;
           }
         }
