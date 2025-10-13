@@ -353,11 +353,32 @@ class CalendarDelegate(
             }
 
             GlobalScope.launch(Dispatchers.IO + exceptionHandler) {
+                // First pass: collect all unique event IDs and original IDs for batch RRULE query
+                val eventIds = mutableSetOf<Long>()
+                val originalIds = mutableSetOf<Long>()
+                while (eventsCursor?.moveToNext() == true) {
+                    val eventId = eventsCursor.getLong(EVENT_PROJECTION_ID_INDEX)
+                    val originalId = eventsCursor.getString(EVENT_PROJECTION_ORIGINAL_ID_INDEX)
+                    eventIds.add(eventId)
+                    if (originalId != null) {
+                        originalIds.add(originalId.toLong())
+                    }
+                }
+
+                // Batch query Events table once for all RRULEs (eliminates N individual queries)
+                val allIdsToQuery = eventIds.union(originalIds)
+                val rruleMap = batchQueryRRules(allIdsToQuery, contentResolver)
+                Log.d("DeviceCalendar", "Calendar $calendarId: Batch queried ${rruleMap.size} RRULEs for ${allIdsToQuery.size} unique events")
+
+                // Reset cursor for second pass
+                eventsCursor?.moveToPosition(-1)
+
+                // Second pass: parse events using pre-fetched RRULE map
                 var skippedCount = 0
                 var totalCount = 0
                 while (eventsCursor?.moveToNext() == true) {
                     totalCount++
-                    val event = parseEvent(calendarId, eventsCursor)
+                    val event = parseEvent(calendarId, eventsCursor, rruleMap)
                     if (event == null) {
                         skippedCount++
                         continue
@@ -769,7 +790,7 @@ class CalendarDelegate(
         return calendar
     }
 
-    private fun parseEvent(calendarId: String, cursor: Cursor?): Event? {
+    private fun parseEvent(calendarId: String, cursor: Cursor?, rruleMap: Map<Long, String?>? = null): Event? {
         if (cursor == null) {
             return null
         }
@@ -807,57 +828,70 @@ class CalendarDelegate(
         event.eventLocation = location
         event.eventURL = url
         
-        // For the first occurrence of a recurring event, recurringRule will be set
-        // For subsequent occurrences, originalId will be set
-        // We need to check the Events table for the first occurrence to see if it's part of a series
+        // RRULE lookup: Use batch-fetched map if available, otherwise fall back to individual queries
+        // The batch approach eliminates N individual ContentResolver queries (one per recurring instance)
         if (recurringRule != null) {
+            // RRULE provided directly in Instances table cursor
             event.recurrenceRule = parseRecurrenceRuleString(recurringRule)
-        } else if (originalId != null) {
-            // This is a subsequent occurrence, so we need to get the recurrence rule from the original event
-            Log.d("DeviceCalendar", "Event $eventId: Querying Events table for RRULE (fallback for subsequent occurrence)")
-            val originalEventUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, originalId.toLong())
-            val originalEventCursor = _context?.contentResolver?.query(
-                originalEventUri,
-                arrayOf(CalendarContract.Events.RRULE),
-                null,
-                null,
-                null
-            )
-            if (originalEventCursor?.moveToFirst() == true) {
-                val originalRecurringRule = originalEventCursor.getString(0)
-                if (originalRecurringRule != null) {
-                    Log.d("DeviceCalendar", "Event $eventId: Fallback query succeeded, found RRULE: ${originalRecurringRule.take(50)}")
-                } else {
-                    Log.w("DeviceCalendar", "Event $eventId: Fallback query returned null RRULE from Events table")
-                }
-                event.recurrenceRule = parseRecurrenceRuleString(originalRecurringRule)
+        } else if (rruleMap != null) {
+            // Use pre-fetched batch query result (fast lookup, no additional query)
+            val lookupId = if (originalId != null) originalId.toLong() else eventId
+            val rruleFromMap = rruleMap[lookupId]
+            if (rruleFromMap != null) {
+                Log.d("DeviceCalendar", "Event $eventId: Using batch-queried RRULE: ${rruleFromMap.take(50)}")
+                event.recurrenceRule = parseRecurrenceRuleString(rruleFromMap)
             } else {
-                Log.w("DeviceCalendar", "Event $eventId: Fallback query failed - cursor empty or null")
+                Log.d("DeviceCalendar", "Event $eventId: No RRULE in batch results - not a recurring event")
             }
-            originalEventCursor?.close()
         } else {
-            // Check if this is the first occurrence of a recurring series
-            Log.d("DeviceCalendar", "Event $eventId: Querying Events table for RRULE (fallback for first occurrence)")
-            val eventUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
-            val eventCursor = _context?.contentResolver?.query(
-                eventUri,
-                arrayOf(CalendarContract.Events.RRULE),
-                null,
-                null,
-                null
-            )
-            if (eventCursor?.moveToFirst() == true) {
-                val eventRecurringRule = eventCursor.getString(0)
-                if (eventRecurringRule != null) {
-                    Log.d("DeviceCalendar", "Event $eventId: Fallback query succeeded, found RRULE: ${eventRecurringRule.take(50)}")
-                    event.recurrenceRule = parseRecurrenceRuleString(eventRecurringRule)
+            // Fallback to individual queries (legacy path for backward compatibility)
+            if (originalId != null) {
+                // This is a subsequent occurrence, query original event
+                Log.d("DeviceCalendar", "Event $eventId: Querying Events table for RRULE (fallback for subsequent occurrence)")
+                val originalEventUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, originalId.toLong())
+                val originalEventCursor = _context?.contentResolver?.query(
+                    originalEventUri,
+                    arrayOf(CalendarContract.Events.RRULE),
+                    null,
+                    null,
+                    null
+                )
+                if (originalEventCursor?.moveToFirst() == true) {
+                    val originalRecurringRule = originalEventCursor.getString(0)
+                    if (originalRecurringRule != null) {
+                        Log.d("DeviceCalendar", "Event $eventId: Fallback query succeeded, found RRULE: ${originalRecurringRule.take(50)}")
+                    } else {
+                        Log.w("DeviceCalendar", "Event $eventId: Fallback query returned null RRULE from Events table")
+                    }
+                    event.recurrenceRule = parseRecurrenceRuleString(originalRecurringRule)
                 } else {
-                    Log.d("DeviceCalendar", "Event $eventId: Fallback query returned null - not a recurring event")
+                    Log.w("DeviceCalendar", "Event $eventId: Fallback query failed - cursor empty or null")
                 }
+                originalEventCursor?.close()
             } else {
-                Log.w("DeviceCalendar", "Event $eventId: Fallback query failed - cursor empty or null")
+                // Check if first occurrence of recurring series
+                Log.d("DeviceCalendar", "Event $eventId: Querying Events table for RRULE (fallback for first occurrence)")
+                val eventUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+                val eventCursor = _context?.contentResolver?.query(
+                    eventUri,
+                    arrayOf(CalendarContract.Events.RRULE),
+                    null,
+                    null,
+                    null
+                )
+                if (eventCursor?.moveToFirst() == true) {
+                    val eventRecurringRule = eventCursor.getString(0)
+                    if (eventRecurringRule != null) {
+                        Log.d("DeviceCalendar", "Event $eventId: Fallback query succeeded, found RRULE: ${eventRecurringRule.take(50)}")
+                        event.recurrenceRule = parseRecurrenceRuleString(eventRecurringRule)
+                    } else {
+                        Log.d("DeviceCalendar", "Event $eventId: Fallback query returned null - not a recurring event")
+                    }
+                } else {
+                    Log.w("DeviceCalendar", "Event $eventId: Fallback query failed - cursor empty or null")
+                }
+                eventCursor?.close()
             }
-            eventCursor?.close()
         }
 
         // Log final status of recurrence rule parsing
@@ -871,6 +905,45 @@ class CalendarDelegate(
         event.eventStatus = eventStatus
 
         return event
+    }
+
+    /**
+     * Batch queries the Events table for RRULEs for multiple events at once.
+     * Eliminates N individual queries (one per recurring event instance).
+     *
+     * @param eventIds Set of event IDs to query
+     * @param contentResolver ContentResolver to use for query
+     * @return Map of eventId -> RRULE string (null if not recurring)
+     */
+    private fun batchQueryRRules(eventIds: Set<Long>, contentResolver: ContentResolver?): Map<Long, String?> {
+        if (eventIds.isEmpty() || contentResolver == null) {
+            return emptyMap()
+        }
+
+        val rruleMap = mutableMapOf<Long, String?>()
+
+        // Build WHERE clause: _ID IN (123, 456, 789, ...)
+        val idsString = eventIds.joinToString(",")
+        val selection = "${CalendarContract.Events._ID} IN ($idsString)"
+
+        val cursor = contentResolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            arrayOf(CalendarContract.Events._ID, CalendarContract.Events.RRULE),
+            selection,
+            null,
+            null
+        )
+
+        cursor?.use {
+            while (it.moveToNext()) {
+                val eventId = it.getLong(0)
+                val rrule = it.getString(1)
+                rruleMap[eventId] = rrule
+            }
+        }
+
+        Log.d("DeviceCalendar", "Batch query: Found RRULEs for ${rruleMap.count { it.value != null }} of ${eventIds.size} events")
+        return rruleMap
     }
 
     private fun parseRecurrenceRuleString(recurrenceRuleString: String?): RecurrenceRule? {
