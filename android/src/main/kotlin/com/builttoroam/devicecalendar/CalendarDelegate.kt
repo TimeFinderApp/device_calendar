@@ -91,17 +91,23 @@ class CalendarDelegate(
     private val channel: MethodChannel
 ) : PluginRegistry.RequestPermissionsResultListener {
 
+    // UI thread handler for MethodChannel calls (which must run on main thread)
+    private val uiThreadHandler = Handler(Looper.getMainLooper())
+
     // Send diagnostic log to Dart for Firestore upload
+    // IMPORTANT: MethodChannel.invokeMethod MUST be called on UI thread
     private fun logDiagnostic(level: String, message: String, data: Map<String, Any> = emptyMap()) {
-        try {
-            channel.invokeMethod("onCalendarSyncLog", mapOf(
-                "level" to level,
-                "message" to message,
-                "data" to data
-            ))
-        } catch (e: Exception) {
-            // Silently fail if Dart side not listening - don't break sync
-            Log.e("DeviceCalendar", "Failed to send diagnostic log to Dart", e)
+        uiThreadHandler.post {
+            try {
+                channel.invokeMethod("onCalendarSyncLog", mapOf(
+                    "level" to level,
+                    "message" to message,
+                    "data" to data
+                ))
+            } catch (e: Exception) {
+                // Silently fail if Dart side not listening - don't break sync
+                Log.e("DeviceCalendar", "Failed to send diagnostic log to Dart", e)
+            }
         }
     }
 
