@@ -391,20 +391,45 @@ class CalendarDelegate(
                     "rrules_with_data" to rruleMap.count { it.value != null }
                 ))
 
+                // Log each event's RRULE query result (for diagnosing which events failed)
+                for (eventId in eventIds) {
+                    val rrule = rruleMap[eventId]
+                    logDiagnostic("debug", "Batch query result for event", mapOf(
+                        "event_id" to eventId.toString(),
+                        "has_rrule" to (rrule != null),
+                        "rrule_string" to (rrule?.take(200) ?: "null")
+                    ))
+                }
+
                 // Reset cursor for second pass
                 eventsCursor?.moveToPosition(-1)
 
                 // Second pass: parse events using pre-fetched RRULE map
                 var skippedCount = 0
                 var totalCount = 0
+                val instanceCountPerEvent = mutableMapOf<Long, Int>()
+
                 while (eventsCursor?.moveToNext() == true) {
                     totalCount++
+                    val eventId = eventsCursor.getLong(EVENT_PROJECTION_ID_INDEX)
+                    instanceCountPerEvent[eventId] = (instanceCountPerEvent[eventId] ?: 0) + 1
+
                     val event = parseEvent(calendarId, eventsCursor, rruleMap)
                     if (event == null) {
                         skippedCount++
                         continue
                     }
                     events.add(event)
+                }
+
+                // Log instance count per unique recurring event
+                for ((eventId, count) in instanceCountPerEvent) {
+                    if (count > 1) {
+                        logDiagnostic("debug", "Recurring event instance count", mapOf(
+                            "event_id" to eventId.toString(),
+                            "instance_count" to count
+                        ))
+                    }
                 }
 
                 if (skippedCount > 0) {
