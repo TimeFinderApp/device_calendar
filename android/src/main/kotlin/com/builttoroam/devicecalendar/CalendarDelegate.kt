@@ -90,6 +90,21 @@ class CalendarDelegate(
     private val _context: Context,
     private val channel: MethodChannel
 ) : PluginRegistry.RequestPermissionsResultListener {
+
+    // Send diagnostic log to Dart for Firestore upload
+    private fun logDiagnostic(level: String, message: String, data: Map<String, Any> = emptyMap()) {
+        try {
+            channel.invokeMethod("onCalendarSyncLog", mapOf(
+                "level" to level,
+                "message" to message,
+                "data" to data
+            ))
+        } catch (e: Exception) {
+            // Silently fail if Dart side not listening - don't break sync
+            Log.e("DeviceCalendar", "Failed to send diagnostic log to Dart", e)
+        }
+    }
+
     private val RETRIEVE_CALENDARS_REQUEST_CODE = 0
     private val RETRIEVE_EVENTS_REQUEST_CODE = RETRIEVE_CALENDARS_REQUEST_CODE + 1
     private val RETRIEVE_CALENDAR_REQUEST_CODE = RETRIEVE_EVENTS_REQUEST_CODE + 1
@@ -369,6 +384,12 @@ class CalendarDelegate(
                 val allIdsToQuery = eventIds.union(originalIds)
                 val rruleMap = batchQueryRRules(allIdsToQuery, contentResolver)
                 Log.d("DeviceCalendar", "Calendar $calendarId: Batch queried ${rruleMap.size} RRULEs for ${allIdsToQuery.size} unique events")
+                logDiagnostic("info", "Batch RRULE query complete", mapOf(
+                    "calendar_id" to calendarId,
+                    "unique_events_queried" to allIdsToQuery.size,
+                    "rrules_found" to rruleMap.size,
+                    "rrules_with_data" to rruleMap.count { it.value != null }
+                ))
 
                 // Reset cursor for second pass
                 eventsCursor?.moveToPosition(-1)
@@ -388,8 +409,19 @@ class CalendarDelegate(
 
                 if (skippedCount > 0) {
                     Log.w("DeviceCalendar", "Calendar $calendarId: Skipped $skippedCount of $totalCount events during parsing")
+                    logDiagnostic("warning", "Events skipped during parsing", mapOf(
+                        "calendar_id" to calendarId,
+                        "skipped_count" to skippedCount,
+                        "total_count" to totalCount
+                    ))
                 }
                 Log.d("DeviceCalendar", "Calendar $calendarId: Successfully parsed ${events.size} events (skipped $skippedCount)")
+                logDiagnostic("info", "Calendar parsing complete", mapOf(
+                    "calendar_id" to calendarId,
+                    "events_parsed" to events.size,
+                    "events_skipped" to skippedCount,
+                    "total_queried" to totalCount
+                ))
 
                 for (event in events) {
                     val attendees = retrieveAttendees(calendar, event.eventId!!, contentResolver)
@@ -964,6 +996,10 @@ class CalendarDelegate(
             // Skip events with unsupported frequencies (HOURLY, SECONDLY, etc.)
             if (frequency == null) {
                 Log.w("DeviceCalendar", "Skipping event with unsupported frequency: ${rfcRecurrenceRule.freq} in RRULE: $recurrenceRuleString")
+                logDiagnostic("warning", "Unsupported RRULE frequency", mapOf(
+                    "frequency" to rfcRecurrenceRule.freq.toString(),
+                    "rrule" to recurrenceRuleString
+                ))
                 return null
             }
 
@@ -1007,6 +1043,10 @@ class CalendarDelegate(
         recurrenceRule
         } catch (e: Exception) {
             Log.e("DeviceCalendar", "Failed to parse RRULE string: $recurrenceRuleString", e)
+            logDiagnostic("error", "RRULE parsing exception", mapOf(
+                "rrule" to recurrenceRuleString,
+                "error" to (e.message ?: "unknown error")
+            ))
             null
         }
     }

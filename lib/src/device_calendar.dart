@@ -27,6 +27,10 @@ class DeviceCalendarPlugin {
   final StreamController<void> _eventChangeController =
       StreamController<void>.broadcast();
 
+  // StreamController for diagnostic logs from native platform
+  final StreamController<Map<String, dynamic>> _diagnosticLogController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   factory DeviceCalendarPlugin({bool shouldInitTimezone = true}) {
     if (shouldInitTimezone) {
       tz.initializeTimeZones();
@@ -474,19 +478,28 @@ class DeviceCalendarPlugin {
   // Getter for the event change stream
   Stream<void> get onCalendarEventChange => _eventChangeController.stream;
 
+  // Getter for diagnostic logs stream from native platform
+  Stream<Map<String, dynamic>> get onDiagnosticLog =>
+      _diagnosticLogController.stream;
+
   // Private method to set up event channel for calendar changes
   void _setupEventChannel() {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onCalendarEventChange') {
         print("Calendar event change detected.");
         _eventChangeController.add(null); // Notify listeners about the change
+      } else if (call.method == 'onCalendarSyncLog') {
+        // Forward native diagnostic log to listeners
+        final logData = Map<String, dynamic>.from(call.arguments as Map);
+        _diagnosticLogController.add(logData);
       }
     });
   }
 
-  // Dispose the stream controller to avoid memory leaks
+  // Dispose the stream controllers to avoid memory leaks
   void dispose() {
     _eventChangeController.close();
+    _diagnosticLogController.close();
     print("Disposed event change controller.");
   }
 }
