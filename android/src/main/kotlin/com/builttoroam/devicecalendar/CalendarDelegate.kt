@@ -353,10 +353,23 @@ class CalendarDelegate(
             }
 
             GlobalScope.launch(Dispatchers.IO + exceptionHandler) {
+                var skippedCount = 0
+                var totalCount = 0
                 while (eventsCursor?.moveToNext() == true) {
-                    val event = parseEvent(calendarId, eventsCursor) ?: continue
+                    totalCount++
+                    val event = parseEvent(calendarId, eventsCursor)
+                    if (event == null) {
+                        skippedCount++
+                        continue
+                    }
                     events.add(event)
                 }
+
+                if (skippedCount > 0) {
+                    Log.w("DeviceCalendar", "Calendar $calendarId: Skipped $skippedCount of $totalCount events during parsing")
+                }
+                Log.d("DeviceCalendar", "Calendar $calendarId: Successfully parsed ${events.size} events (skipped $skippedCount)")
+
                 for (event in events) {
                     val attendees = retrieveAttendees(calendar, event.eventId!!, contentResolver)
                     event.organizer = attendees.firstOrNull { it.isOrganizer != null && it.isOrganizer }
@@ -776,6 +789,13 @@ class CalendarDelegate(
         val eventStatus = parseEventStatus(cursor.getInt(EVENT_PROJECTION_STATUS_INDEX))
         val originalId = cursor.getString(EVENT_PROJECTION_ORIGINAL_ID_INDEX)
 
+        // Log when Instances table returns null RRULE (Android quirk - requires fallback query)
+        if (recurringRule == null && originalId != null) {
+            Log.d("DeviceCalendar", "Event $eventId ('${title?.take(30)}'): RRULE null in Instances, will query Events table (originalId=$originalId)")
+        } else if (recurringRule == null && originalId == null) {
+            Log.d("DeviceCalendar", "Event $eventId ('${title?.take(30)}'): RRULE null in Instances, will query Events table (first occurrence)")
+        }
+
         val event = Event()
         event.eventTitle = title ?: "New Event"
         event.eventId = eventId.toString()
@@ -794,6 +814,7 @@ class CalendarDelegate(
             event.recurrenceRule = parseRecurrenceRuleString(recurringRule)
         } else if (originalId != null) {
             // This is a subsequent occurrence, so we need to get the recurrence rule from the original event
+            Log.d("DeviceCalendar", "Event $eventId: Querying Events table for RRULE (fallback for subsequent occurrence)")
             val originalEventUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, originalId.toLong())
             val originalEventCursor = _context?.contentResolver?.query(
                 originalEventUri,
@@ -804,11 +825,19 @@ class CalendarDelegate(
             )
             if (originalEventCursor?.moveToFirst() == true) {
                 val originalRecurringRule = originalEventCursor.getString(0)
+                if (originalRecurringRule != null) {
+                    Log.d("DeviceCalendar", "Event $eventId: Fallback query succeeded, found RRULE: ${originalRecurringRule.take(50)}")
+                } else {
+                    Log.w("DeviceCalendar", "Event $eventId: Fallback query returned null RRULE from Events table")
+                }
                 event.recurrenceRule = parseRecurrenceRuleString(originalRecurringRule)
+            } else {
+                Log.w("DeviceCalendar", "Event $eventId: Fallback query failed - cursor empty or null")
             }
             originalEventCursor?.close()
         } else {
             // Check if this is the first occurrence of a recurring series
+            Log.d("DeviceCalendar", "Event $eventId: Querying Events table for RRULE (fallback for first occurrence)")
             val eventUri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
             val eventCursor = _context?.contentResolver?.query(
                 eventUri,
@@ -820,10 +849,20 @@ class CalendarDelegate(
             if (eventCursor?.moveToFirst() == true) {
                 val eventRecurringRule = eventCursor.getString(0)
                 if (eventRecurringRule != null) {
+                    Log.d("DeviceCalendar", "Event $eventId: Fallback query succeeded, found RRULE: ${eventRecurringRule.take(50)}")
                     event.recurrenceRule = parseRecurrenceRuleString(eventRecurringRule)
+                } else {
+                    Log.d("DeviceCalendar", "Event $eventId: Fallback query returned null - not a recurring event")
                 }
+            } else {
+                Log.w("DeviceCalendar", "Event $eventId: Fallback query failed - cursor empty or null")
             }
             eventCursor?.close()
+        }
+
+        // Log final status of recurrence rule parsing
+        if (event.recurrenceRule == null && (recurringRule != null || originalId != null)) {
+            Log.w("DeviceCalendar", "Event $eventId ('${title?.take(30)}'): Expected recurring event but recurrenceRule is null after all fallback attempts")
         }
         
         event.eventStartTimeZone = startTimeZone
