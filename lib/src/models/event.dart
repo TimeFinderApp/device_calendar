@@ -172,6 +172,9 @@ class Event {
       final startUtc = start?.toUtc();
       final endUtc = end?.toUtc();
 
+      final beforeStart = start;
+      final beforeEnd = end;
+
       // Extract date from UTC start, create local midnight on that date
       start = startUtc != null
           ? TZDateTime(local, startUtc.year, startUtc.month, startUtc.day)
@@ -183,6 +186,11 @@ class Event {
       end = adjustedEndUtc != null
           ? TZDateTime(local, adjustedEndUtc.year, adjustedEndUtc.month, adjustedEndUtc.day)
           : end;
+
+      // DEBUG: Show timezone fix transformation
+      debugPrint('🔧 ALL-DAY TIMEZONE FIX: ${title ?? 'untitled'} (${eventId?.substring(0, 8)})');
+      debugPrint('   BEFORE: start=${beforeStart?.toIso8601String()}, end=${beforeEnd?.toIso8601String()}');
+      debugPrint('   AFTER:  start=${start?.toIso8601String()}, end=${end?.toIso8601String()}');
     }
     location = json['eventLocation'];
     availability = parseStringToAvailability(json['availability']);
