@@ -126,7 +126,6 @@ class CalendarDelegate(
     private val _cachedParametersMap: MutableMap<Int, CalendarMethodsParametersCacheModel> = mutableMapOf()
     private var _gson: Gson? = null
 
-    private val uiThreadHandler = Handler(Looper.getMainLooper())
     private var calendarObserver: ContentObserver? = null
 
     init {
@@ -453,6 +452,9 @@ class CalendarDelegate(
                     "events_skipped" to skippedCount,
                     "total_queried" to totalCount
                 ))
+
+                // TEST: Intentional error to validate native error propagation to Dart/Sentry
+                throw Exception("TEST ERROR: Validating native error propagation to Dart and Sentry")
 
                 for (event in events) {
                     val attendees = retrieveAttendees(calendar, event.eventId!!, contentResolver)

@@ -386,6 +386,8 @@ class DeviceCalendarPlugin {
             "INVOKE_CHANNEL_METHOD_ERROR! Name: ${e.name}, InvalidValue: ${e.invalidValue}, Message: ${e.message}, ${e.toString()}");
       } else if (e is PlatformException) {
         debugPrint('INVOKE_CHANNEL_METHOD_ERROR: $e\n$s');
+        // Add PlatformException to result.errors so it can be detected by callers
+        _parsePlatformExceptionAndUpdateResult<T>(e, result);
       } else {
         _parsePlatformExceptionAndUpdateResult<T>(e as Exception?, result);
       }
