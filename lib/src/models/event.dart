@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
@@ -188,7 +189,8 @@ class Event {
           : end;
 
       // DEBUG: Show timezone fix transformation
-      debugPrint('🔧 ALL-DAY TIMEZONE FIX: ${title ?? 'untitled'} (${eventId?.substring(0, 8)})');
+      final eventIdShort = eventId?.substring(0, min(8, eventId?.length ?? 0)) ?? 'unknown';
+      debugPrint('🔧 ALL-DAY TIMEZONE FIX: ${title ?? 'untitled'} ($eventIdShort)');
       debugPrint('   BEFORE: start=${beforeStart?.toIso8601String()}, end=${beforeEnd?.toIso8601String()}');
       debugPrint('   AFTER:  start=${start?.toIso8601String()}, end=${end?.toIso8601String()}');
     }
