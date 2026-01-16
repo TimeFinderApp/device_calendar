@@ -237,34 +237,34 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
         val recurrenceRuleArgs = call.argument<Map<String, Any>>(RECURRENCE_RULE_ARGUMENT)!!
         val recurrenceFrequencyIndex = recurrenceRuleArgs[RECURRENCE_FREQUENCY_ARGUMENT] as Int
         val recurrenceRule = RecurrenceRule(RecurrenceFrequency.values()[recurrenceFrequencyIndex])
-        if (recurrenceRuleArgs.containsKey(TOTAL_OCCURRENCES_ARGUMENT)) {
-            recurrenceRule.totalOccurrences = recurrenceRuleArgs[TOTAL_OCCURRENCES_ARGUMENT] as Int
+
+        // Use safe casts to handle null values - containsKey() returns true even when value is null
+        (recurrenceRuleArgs[TOTAL_OCCURRENCES_ARGUMENT] as? Int)?.let {
+            recurrenceRule.totalOccurrences = it
         }
 
-        if (recurrenceRuleArgs.containsKey(INTERVAL_ARGUMENT)) {
-            recurrenceRule.interval = recurrenceRuleArgs[INTERVAL_ARGUMENT] as Int
+        (recurrenceRuleArgs[INTERVAL_ARGUMENT] as? Int)?.let {
+            recurrenceRule.interval = it
         }
 
-        if (recurrenceRuleArgs.containsKey(END_DATE_ARGUMENT)) {
-            recurrenceRule.endDate = recurrenceRuleArgs[END_DATE_ARGUMENT] as Long
+        (recurrenceRuleArgs[END_DATE_ARGUMENT] as? Long)?.let {
+            recurrenceRule.endDate = it
         }
 
-        if (recurrenceRuleArgs.containsKey(DAYS_OF_WEEK_ARGUMENT)) {
-            recurrenceRule.daysOfWeek =
-                recurrenceRuleArgs[DAYS_OF_WEEK_ARGUMENT].toListOf<Int>()?.map { DayOfWeek.values()[it] }
-                    ?.toMutableList()
+        recurrenceRuleArgs[DAYS_OF_WEEK_ARGUMENT]?.toListOf<Int>()?.let { dayIndices ->
+            recurrenceRule.daysOfWeek = dayIndices.map { DayOfWeek.values()[it] }.toMutableList()
         }
 
-        if (recurrenceRuleArgs.containsKey(DAY_OF_MONTH_ARGUMENT)) {
-            recurrenceRule.dayOfMonth = recurrenceRuleArgs[DAY_OF_MONTH_ARGUMENT] as Int
+        (recurrenceRuleArgs[DAY_OF_MONTH_ARGUMENT] as? Int)?.let {
+            recurrenceRule.dayOfMonth = it
         }
 
-        if (recurrenceRuleArgs.containsKey(MONTH_OF_YEAR_ARGUMENT)) {
-            recurrenceRule.monthOfYear = recurrenceRuleArgs[MONTH_OF_YEAR_ARGUMENT] as Int
+        (recurrenceRuleArgs[MONTH_OF_YEAR_ARGUMENT] as? Int)?.let {
+            recurrenceRule.monthOfYear = it
         }
 
-        if (recurrenceRuleArgs.containsKey(WEEK_OF_MONTH_ARGUMENT)) {
-            recurrenceRule.weekOfMonth = recurrenceRuleArgs[WEEK_OF_MONTH_ARGUMENT] as Int
+        (recurrenceRuleArgs[WEEK_OF_MONTH_ARGUMENT] as? Int)?.let {
+            recurrenceRule.weekOfMonth = it
         }
 
         return recurrenceRule
