@@ -59,6 +59,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         let color: Int
         let accountName: String
         let accountType: String
+        let sourceIdentifier: String?
     }
 
     struct Event: Codable {
@@ -429,7 +430,8 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                         isDefault: defaultCalendar?.calendarIdentifier == ekCalendar.calendarIdentifier,
                         color: calendarColor,
                         accountName: ekCalendar.source.title,
-                        accountType: self.getAccountType(ekCalendar.source.sourceType))
+                        accountType: self.getAccountType(ekCalendar.source.sourceType),
+                        sourceIdentifier: ekCalendar.source.sourceIdentifier)
                     calendars.append(calendar)
                 }
 

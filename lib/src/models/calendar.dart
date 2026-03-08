@@ -21,6 +21,16 @@ class Calendar {
   // Read-only. Account type associated with the calendar
   String? accountType;
 
+  // Read-only. Source identifier for the calendar's account source.
+  // On iOS/macOS this is the EKSource.sourceIdentifier (e.g. "iCloud").
+  // Not available on Android (null).
+  String? sourceIdentifier;
+
+  // Read-only. Owner account email address.
+  // On Android this is CalendarContract.Calendars.OWNER_ACCOUNT.
+  // Not available on iOS/macOS (null).
+  String? ownerAccount;
+
   Calendar(
       {this.id,
       this.name,
@@ -28,7 +38,9 @@ class Calendar {
       this.isDefault,
       this.color,
       this.accountName,
-      this.accountType});
+      this.accountType,
+      this.sourceIdentifier,
+      this.ownerAccount});
 
   Calendar.fromJson(Map<String, dynamic> json) {
     id = json['id'];
@@ -38,6 +50,8 @@ class Calendar {
     color = json['color'];
     accountName = json['accountName'];
     accountType = json['accountType'];
+    sourceIdentifier = json['sourceIdentifier'];
+    ownerAccount = json['ownerAccount'];
   }
 
   Map<String, dynamic> toJson() {
@@ -48,7 +62,9 @@ class Calendar {
       'isDefault': isDefault,
       'color': color,
       'accountName': accountName,
-      'accountType': accountType
+      'accountType': accountType,
+      'sourceIdentifier': sourceIdentifier,
+      'ownerAccount': ownerAccount,
     };
 
     return data;
