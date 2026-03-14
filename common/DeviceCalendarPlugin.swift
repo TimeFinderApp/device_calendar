@@ -1268,16 +1268,23 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
     // MZ - Reminder Package Methods
     private func getDefaultList(_ result: @escaping FlutterResult) {
-        // Since defaultList is not optional, directly return its JSON representation
-        if let json = List(list: defaultList).toJson() {
-            result(json)
-        } else {
-            result(FlutterError(code: "JSON_ERROR", message: "Failed to convert default list to JSON", details: nil))
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let list = defaultList
+            if let json = List(list: list).toJson() {
+                DispatchQueue.main.async { result(json) }
+            } else {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "JSON_ERROR", message: "Failed to convert default list to JSON", details: nil))
+                }
+            }
         }
     }
 
     private func getDefaultListId(_ result: @escaping FlutterResult) {
-        result(defaultList.calendarIdentifier)
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let id = defaultList.calendarIdentifier
+            DispatchQueue.main.async { result(id) }
+        }
     }
 
     func requestPermission(completion: @escaping (Bool) -> Void) {
@@ -1327,89 +1334,110 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func getAllLists(_ result: @escaping FlutterResult) {
-        let lists = eventStore.calendars(for: .reminder)
-        let jsonData = try? JSONEncoder().encode(lists.map { List(list: $0) })
-        if let jsonData = jsonData {
-            result(String(data: jsonData, encoding: .utf8))
-        } else {
-            result(FlutterError(code: "JSON_ERROR", message: "Failed to convert lists to JSON", details: nil))
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let lists = eventStore.calendars(for: .reminder)
+            let jsonData = try? JSONEncoder().encode(lists.map { List(list: $0) })
+            if let jsonData = jsonData {
+                DispatchQueue.main.async { result(String(data: jsonData, encoding: .utf8)) }
+            } else {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "JSON_ERROR", message: "Failed to convert lists to JSON", details: nil))
+                }
+            }
         }
     }
 
     private func getReminders(_ id: String?, _ result: @escaping FlutterResult) {
-        var calendar: [EKCalendar]?
-        if let id = id {
-            if let foundCalendar = eventStore.calendar(withIdentifier: id) {
-                calendar = [foundCalendar]
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            var calendar: [EKCalendar]?
+            if let id = id {
+                if let foundCalendar = eventStore.calendar(withIdentifier: id) {
+                    calendar = [foundCalendar]
+                } else {
+                    DispatchQueue.main.async {
+                        result(FlutterError(code: "CALENDAR_NOT_FOUND", message: "Calendar with ID \(id) not found", details: nil))
+                    }
+                    return
+                }
+            }
+            let predicate: NSPredicate? = eventStore.predicateForReminders(in: calendar)
+            if let predicate = predicate {
+                eventStore.fetchReminders(matching: predicate) { reminders in
+                    let rems = reminders ?? []
+                    let resultArray = rems.map { Reminder(reminder: $0) }
+
+                    let encoder = JSONEncoder()
+                    encoder.dateEncodingStrategy = .iso8601
+
+                    let json = try? encoder.encode(resultArray)
+                    result(String(data: json ?? Data(), encoding: .utf8))
+                }
             } else {
-                result(FlutterError(code: "CALENDAR_NOT_FOUND", message: "Calendar with ID \(id) not found", details: nil))
-                return
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "PREDICATE_ERROR", message: "Failed to create predicate for reminders", details: nil))
+                }
             }
-        }
-        let predicate: NSPredicate? = eventStore.predicateForReminders(in: calendar)
-        if let predicate = predicate {
-            eventStore.fetchReminders(matching: predicate) { reminders in
-                let rems = reminders ?? []
-                let resultArray = rems.map { Reminder(reminder: $0) }
-
-                // Configure JSONEncoder with ISO8601 date formatting for proper parsing on the Dart side
-                let encoder = JSONEncoder()
-                encoder.dateEncodingStrategy = .iso8601
-
-                let json = try? encoder.encode(resultArray)
-                result(String(data: json ?? Data(), encoding: .utf8))
-            }
-        } else {
-            result(FlutterError(code: "PREDICATE_ERROR", message: "Failed to create predicate for reminders", details: nil))
         }
     }
 
     private func saveReminder(_ json: [String: Any], _ result: @escaping FlutterResult) {
-        let reminder: EKReminder
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let reminder: EKReminder
 
-        guard let calendarID = json["list"] as? String,
-              let list = eventStore.calendar(withIdentifier: calendarID) else {
-            result(FlutterError(code: "INVALID_CALENDAR_ID", message: "Invalid calendarID", details: nil))
-            return
-        }
+            guard let calendarID = json["list"] as? String,
+                  let list = eventStore.calendar(withIdentifier: calendarID) else {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "INVALID_CALENDAR_ID", message: "Invalid calendarID", details: nil))
+                }
+                return
+            }
 
-        if let reminderID = json["id"] as? String,
-           let existingReminder = eventStore.calendarItem(withIdentifier: reminderID) as? EKReminder {
-            reminder = existingReminder
-        } else {
-            reminder = EKReminder(eventStore: eventStore)
-        }
+            if let reminderID = json["id"] as? String,
+               let existingReminder = eventStore.calendarItem(withIdentifier: reminderID) as? EKReminder {
+                reminder = existingReminder
+            } else {
+                reminder = EKReminder(eventStore: eventStore)
+            }
 
-        reminder.calendar = list
-        reminder.title = json["title"] as? String ?? ""
-        reminder.priority = json["priority"] as? Int ?? 0
-        reminder.isCompleted = json["isCompleted"] as? Bool ?? false
-        reminder.notes = json["notes"] as? String
-        if let date = json["dueDate"] as? [String: Int] {
-            reminder.dueDateComponents = DateComponents(year: date["year"], month: date["month"], day: date["day"])
-        } else {
-            reminder.dueDateComponents = nil
-        }
+            reminder.calendar = list
+            reminder.title = json["title"] as? String ?? ""
+            reminder.priority = json["priority"] as? Int ?? 0
+            reminder.isCompleted = json["isCompleted"] as? Bool ?? false
+            reminder.notes = json["notes"] as? String
+            if let date = json["dueDate"] as? [String: Int] {
+                reminder.dueDateComponents = DateComponents(year: date["year"], month: date["month"], day: date["day"])
+            } else {
+                reminder.dueDateComponents = nil
+            }
 
-        do {
-            try eventStore.save(reminder, commit: true)
-            result(reminder.calendarItemIdentifier)
-        } catch {
-            result(FlutterError(code: "SAVE_ERROR", message: "Failed to save reminder", details: error.localizedDescription))
+            do {
+                try eventStore.save(reminder, commit: true)
+                DispatchQueue.main.async { result(reminder.calendarItemIdentifier) }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "SAVE_ERROR", message: "Failed to save reminder", details: error.localizedDescription))
+                }
+            }
         }
     }
 
     private func deleteReminder(_ id: String, _ result: @escaping FlutterResult) {
-        guard let reminder = eventStore.calendarItem(withIdentifier: id) as? EKReminder else {
-            result(FlutterError(code: "NOT_FOUND", message: "Cannot find reminder with ID: \(id)", details: nil))
-            return
-        }
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            guard let reminder = eventStore.calendarItem(withIdentifier: id) as? EKReminder else {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "NOT_FOUND", message: "Cannot find reminder with ID: \(id)", details: nil))
+                }
+                return
+            }
 
-        do {
-            try eventStore.remove(reminder, commit: true)
-            result(nil)
-        } catch {
-            result(FlutterError(code: "DELETE_ERROR", message: "Failed to delete reminder", details: error.localizedDescription))
+            do {
+                try eventStore.remove(reminder, commit: true)
+                DispatchQueue.main.async { result(nil) }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "DELETE_ERROR", message: "Failed to delete reminder", details: error.localizedDescription))
+                }
+            }
         }
     }
 
