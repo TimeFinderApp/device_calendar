@@ -1098,11 +1098,16 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
                 let ekEvent = foundEkEvents!.first(where: {$0.eventIdentifier == eventId})
 
+                guard let ekEvent = ekEvent else {
+                    self.finishWithEventNotFoundError(result: result, eventId: eventId)
+                    return
+                }
+
                 do {
                     if !followingInstances! {
-                        try self.eventStore.remove(ekEvent!, span: .thisEvent, commit: true)
+                        try self.eventStore.remove(ekEvent, span: .thisEvent, commit: true)
                     } else {
-                        try self.eventStore.remove(ekEvent!, span: .futureEvents, commit: true)
+                        try self.eventStore.remove(ekEvent, span: .futureEvents, commit: true)
                     }
 
                     result(true)
