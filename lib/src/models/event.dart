@@ -435,16 +435,14 @@ class Event {
   static Map<String, dynamic> _sanitizeRecurrenceRule(Map<String, dynamic> rule) {
     final sanitized = Map<String, dynamic>.from(rule);
     final freq = sanitized['freq'] as String?;
-    
+
     // Handle RFC 5545 violation: BYYEARDAY MUST NOT be specified for DAILY, WEEKLY, or MONTHLY
     if (freq != null && ['DAILY', 'WEEKLY', 'MONTHLY'].contains(freq.toUpperCase())) {
       if (sanitized.containsKey('byyearday')) {
-        print('WARNING: Removing BYYEARDAY from $freq recurrence rule (RFC 5545 violation)');
-        print('Event may have been created by third-party calendar app with relaxed validation');
         sanitized.remove('byyearday');
       }
     }
-    
+
     return sanitized;
   }
 }
