@@ -180,6 +180,10 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     let calendarReadOnlyErrorMessageFormat = "Calendar with ID %@ is read-only"
     let eventNotFoundErrorMessageFormat = "The event with the ID %@ could not be found"
     let eventStore = SharedEventStore.shared
+    let eventKitQueue = DispatchQueue(
+        label: "com.builttoroam.device_calendar.eventkit",
+        qos: .userInitiated
+    )
     // MZ - Added variable from Reminders Package
     lazy var defaultList: EKCalendar = {
         return eventStore.defaultCalendarForNewReminders() ?? EKCalendar(for: .reminder, eventStore: eventStore)
@@ -383,8 +387,17 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func sendEventChangeNotification() {
-        // MZ - Notify Flutter about the calendar event changes
-        calendarChannel?.invokeMethod("onCalendarEventChange", arguments: nil)
+        logDiagnostic(
+            level: "debug",
+            message: "Calendar observer fired",
+            data: [
+                "thread": Thread.current.description,
+                "is_main_thread": Thread.isMainThread
+            ]
+        )
+        DispatchQueue.main.async { [weak self] in
+            self?.calendarChannel?.invokeMethod("onCalendarEventChange", arguments: nil)
+        }
     }
 
     private func createCalendar(_ call: FlutterMethodCall, _ result: FlutterResult) {
@@ -401,43 +414,49 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
 
             guard let source = getSource() else {
-                result(FlutterError(code: self.genericError, message: "Local calendar was not found.", details: nil))
+                finishWithFlutterError(
+                    result: result,
+                    code: self.genericError,
+                    message: "Local calendar was not found."
+                )
                 return
             }
 
             calendar.source = source
 
             try eventStore.saveCalendar(calendar, commit: true)
-            result(calendar.calendarIdentifier)
+            finishWithValue(result: result, value: calendar.calendarIdentifier)
         } catch {
             eventStore.reset()
-            result(FlutterError(code: self.genericError, message: error.localizedDescription, details: nil))
+            finishWithFlutterError(
+                result: result,
+                code: self.genericError,
+                message: error.localizedDescription
+            )
         }
     }
 
     private func retrieveCalendars(_ result: @escaping FlutterResult) {
         checkPermissionsThenExecute(permissionsGrantedAction: {
-            DispatchQueue.main.async {
-                let ekCalendars = self.eventStore.calendars(for: .event)
-                let defaultCalendar = self.eventStore.defaultCalendarForNewEvents
-                var calendars = [DeviceCalendar]()
-                for ekCalendar in ekCalendars {
-                    let calendarColor = DeviceCalendarPlugin.getColorFromCalendar(ekCalendar)!
-                    let calendar = DeviceCalendar(
-                        id: ekCalendar.calendarIdentifier,
-                        name: ekCalendar.title,
-                        isReadOnly: !ekCalendar.allowsContentModifications,
-                        isDefault: defaultCalendar?.calendarIdentifier == ekCalendar.calendarIdentifier,
-                        color: calendarColor,
-                        accountName: ekCalendar.source.title,
-                        accountType: self.getAccountType(ekCalendar.source.sourceType),
-                        sourceIdentifier: ekCalendar.source.sourceIdentifier)
-                    calendars.append(calendar)
-                }
-
-                self.encodeJsonAndFinish(codable: calendars, result: result)
+            let ekCalendars = self.eventStore.calendars(for: .event)
+            let defaultCalendar = self.eventStore.defaultCalendarForNewEvents
+            var calendars = [DeviceCalendar]()
+            for ekCalendar in ekCalendars {
+                let calendarColor = DeviceCalendarPlugin.getColorFromCalendar(ekCalendar)!
+                let calendar = DeviceCalendar(
+                    id: ekCalendar.calendarIdentifier,
+                    name: ekCalendar.title,
+                    isReadOnly: !ekCalendar.allowsContentModifications,
+                    isDefault: defaultCalendar?.calendarIdentifier == ekCalendar.calendarIdentifier,
+                    color: calendarColor,
+                    accountName: ekCalendar.source.title,
+                    accountType: self.getAccountType(ekCalendar.source.sourceType),
+                    sourceIdentifier: ekCalendar.source.sourceIdentifier)
+                calendars.append(calendar)
             }
-        }, result: result)
+
+            self.encodeJsonAndFinish(codable: calendars, result: result)
+        }, result: result, operationName: "retrieveCalendars")
     }
 
     private func deleteCalendar(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
@@ -459,12 +478,16 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
             do {
                 try self.eventStore.removeCalendar(ekCalendar!, commit: true)
-                result(true)
+                self.finishWithValue(result: result, value: true)
             } catch {
                 self.eventStore.reset()
-                result(FlutterError(code: self.genericError, message: error.localizedDescription, details: nil))
+                self.finishWithFlutterError(
+                    result: result,
+                    code: self.genericError,
+                    message: error.localizedDescription
+                )
             }
-        }, result: result)
+        }, result: result, operationName: "deleteCalendar")
     }
 
     private func getAccountType(_ sourceType: EKSourceType) -> String {
@@ -492,7 +515,11 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
             guard let arguments = call.arguments as? [String: AnyObject],
                   let calendarId = arguments[self.calendarIdArgument] as? String else {
-                result(FlutterError(code: "INVALID_ARGUMENTS", message: "Missing arguments", details: nil))
+                self.finishWithFlutterError(
+                    result: result,
+                    code: "INVALID_ARGUMENTS",
+                    message: "Missing arguments"
+                )
                 return
             }
 
@@ -541,7 +568,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
 
             self.encodeJsonAndFinish(codable: events, result: result)
-        }, result: result)
+        }, result: result, operationName: "retrieveEvents")
     }
 
     private func createEventFromEkEvent(calendarId: String, ekEvent: EKEvent) -> Event? {
@@ -1026,14 +1053,21 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 ekEvent!.availability = availability
             }
 
-            do {
-                try self.eventStore.save(ekEvent!, span: .futureEvents)
-                result(ekEvent!.eventIdentifier)
-            } catch {
-                self.eventStore.reset()
-                result(FlutterError(code: self.genericError, message: error.localizedDescription, details: nil))
-            }
-        }, result: result)
+                do {
+                    try self.eventStore.save(ekEvent!, span: .futureEvents)
+                    self.finishWithValue(
+                        result: result,
+                        value: ekEvent!.eventIdentifier
+                    )
+                } catch {
+                    self.eventStore.reset()
+                    self.finishWithFlutterError(
+                        result: result,
+                        code: self.genericError,
+                        message: error.localizedDescription
+                    )
+                }
+        }, result: result, operationName: "createOrUpdateEvent")
     }
 
     private func createParticipant(name: String, emailAddress: String, role: Int) -> EKParticipant? {
@@ -1079,10 +1113,14 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
                 do {
                     try self.eventStore.remove(ekEvent!, span: .futureEvents)
-                    result(true)
+                    self.finishWithValue(result: result, value: true)
                 } catch {
                     self.eventStore.reset()
-                    result(FlutterError(code: self.genericError, message: error.localizedDescription, details: nil))
+                    self.finishWithFlutterError(
+                        result: result,
+                        code: self.genericError,
+                        message: error.localizedDescription
+                    )
                 }
             } else {
                 let startDate = Date(timeIntervalSince1970: startDateNumber!.doubleValue / 1000.0)
@@ -1110,13 +1148,17 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                         try self.eventStore.remove(ekEvent, span: .futureEvents, commit: true)
                     }
 
-                    result(true)
+                    self.finishWithValue(result: result, value: true)
                 } catch {
                     self.eventStore.reset()
-                    result(FlutterError(code: self.genericError, message: error.localizedDescription, details: nil))
+                    self.finishWithFlutterError(
+                        result: result,
+                        code: self.genericError,
+                        message: error.localizedDescription
+                    )
                 }
             }
-        }, result: result)
+        }, result: result, operationName: "deleteEvent")
     }
 
     private func showEventModal(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
@@ -1144,9 +1186,9 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 flutterViewController.present(navigationController, animated: true, completion: nil)
 
             } else {
-                result(FlutterError(code: self.genericError, message: self.eventNotFoundErrorMessageFormat, details: nil))
+                self.finishWithEventNotFoundError(result: result, eventId: eventId)
             }
-        }, result: result)
+        }, result: result, executeOnMainThread: true)
         #endif
     }
 
@@ -1179,22 +1221,38 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     #endif
 
     private func finishWithUnauthorizedError(result: @escaping FlutterResult) {
-        result(FlutterError(code: self.unauthorizedErrorCode, message: self.unauthorizedErrorMessage, details: nil))
+        finishWithFlutterError(
+            result: result,
+            code: self.unauthorizedErrorCode,
+            message: self.unauthorizedErrorMessage
+        )
     }
 
     private func finishWithCalendarNotFoundError(result: @escaping FlutterResult, calendarId: String) {
         let errorMessage = String(format: self.calendarNotFoundErrorMessageFormat, calendarId)
-        result(FlutterError(code: self.notFoundErrorCode, message: errorMessage, details: nil))
+        finishWithFlutterError(
+            result: result,
+            code: self.notFoundErrorCode,
+            message: errorMessage
+        )
     }
 
     private func finishWithCalendarReadOnlyError(result: @escaping FlutterResult, calendarId: String) {
         let errorMessage = String(format: self.calendarReadOnlyErrorMessageFormat, calendarId)
-        result(FlutterError(code: self.notAllowed, message: errorMessage, details: nil))
+        finishWithFlutterError(
+            result: result,
+            code: self.notAllowed,
+            message: errorMessage
+        )
     }
 
     private func finishWithEventNotFoundError(result: @escaping FlutterResult, eventId: String) {
         let errorMessage = String(format: self.eventNotFoundErrorMessageFormat, eventId)
-        result(FlutterError(code: self.notFoundErrorCode, message: errorMessage, details: nil))
+        finishWithFlutterError(
+            result: result,
+            code: self.notFoundErrorCode,
+            message: errorMessage
+        )
     }
 
     private func encodeJsonAndFinish<T: Codable>(codable: T, result: @escaping FlutterResult) {
@@ -1202,28 +1260,119 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             let jsonEncoder = JSONEncoder()
             let jsonData = try jsonEncoder.encode(codable)
             let jsonString = String(data: jsonData, encoding: .utf8)
-            result(jsonString)
+            finishWithValue(result: result, value: jsonString)
         } catch {
-            result(FlutterError(code: genericError, message: error.localizedDescription, details: nil))
+            finishWithFlutterError(
+                result: result,
+                code: genericError,
+                message: error.localizedDescription
+            )
         }
     }
 
-    private func checkPermissionsThenExecute(permissionsGrantedAction: @escaping () -> Void, result: @escaping FlutterResult) {
+    private func finishWithValue(result: @escaping FlutterResult, value: Any?) {
+        DispatchQueue.main.async {
+            result(value)
+        }
+    }
+
+    private func finishWithFlutterError(
+        result: @escaping FlutterResult,
+        code: String,
+        message: String
+    ) {
+        DispatchQueue.main.async {
+            result(FlutterError(code: code, message: message, details: nil))
+        }
+    }
+
+    private func logDiagnostic(
+        level: String,
+        message: String,
+        data: [String: Any] = [:]
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            self?.calendarChannel?.invokeMethod(
+                "onCalendarSyncLog",
+                arguments: [
+                    "level": level,
+                    "message": message,
+                    "data": data
+                ]
+            )
+        }
+    }
+
+    private func logCalendarOperationStart(_ operationName: String?) -> Date? {
+        guard let operationName else { return nil }
+        if Thread.isMainThread {
+            logDiagnostic(
+                level: "warning",
+                message: "Main-thread calendar work detected",
+                data: ["operation": operationName]
+            )
+        }
+        return Date()
+    }
+
+    private func logCalendarOperationFinish(_ operationName: String?, startedAt: Date?) {
+        guard let operationName, let startedAt else { return }
+        let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        logDiagnostic(
+            level: "debug",
+            message: "Calendar operation complete",
+            data: [
+                "operation": operationName,
+                "duration_ms": durationMs,
+                "thread": Thread.current.description
+            ]
+        )
+    }
+
+    private func dispatchPermissionGrantedAction(
+        permissionsGrantedAction: @escaping () -> Void,
+        operationName: String?,
+        executeOnMainThread: Bool
+    ) {
+        let work = { [weak self] in
+            guard let self = self else { return }
+            let startedAt = self.logCalendarOperationStart(operationName)
+            permissionsGrantedAction()
+            self.logCalendarOperationFinish(operationName, startedAt: startedAt)
+        }
+
+        if executeOnMainThread {
+            DispatchQueue.main.async(execute: work)
+        } else {
+            eventKitQueue.async(execute: work)
+        }
+    }
+
+    private func checkPermissionsThenExecute(
+        permissionsGrantedAction: @escaping () -> Void,
+        result: @escaping FlutterResult,
+        operationName: String? = nil,
+        executeOnMainThread: Bool = false
+    ) {
         if hasEventPermissions() {
-            DispatchQueue.main.async {
-                permissionsGrantedAction()
-            }
+            dispatchPermissionGrantedAction(
+                permissionsGrantedAction: permissionsGrantedAction,
+                operationName: operationName,
+                executeOnMainThread: executeOnMainThread
+            )
         } else {
             requestPermissions { [weak self] accessGranted in
                 guard let self = self else {
                     return
                 }
-                DispatchQueue.main.async {
-                    if accessGranted {
-                        permissionsGrantedAction()
-                    } else {
-                        self.finishWithUnauthorizedError(result: result)
-                    }
+                if accessGranted {
+                    self.dispatchPermissionGrantedAction(
+                        permissionsGrantedAction: permissionsGrantedAction,
+                        operationName: operationName,
+                        executeOnMainThread: executeOnMainThread
+                    )
+                } else {
+                    self.finishWithUnauthorizedError(result: result)
                 }
             }
         }
