@@ -1,53 +1,84 @@
 pluginManagement {
-    def flutterSdkPath = {
+    def resolveFlutterSdkPath = {
         def properties = new Properties()
-        file("local.properties").withInputStream { properties.load(it) }
-        def flutterSdkPath = properties.getProperty("flutter.sdk")
-        assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
-        return flutterSdkPath
-    }()
+        def localPropertiesFile = file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.withInputStream { properties.load(it) }
+        }
 
-    includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+        def candidates = [
+            properties.getProperty("flutter.sdk"),
+            System.getenv("FLUTTER_ROOT"),
+            new File(settingsDir.parentFile, ".fvm/flutter_sdk").path,
+            new File(System.getProperty("user.home"), "fvm/default").path,
+        ].findAll { it != null && !it.trim().isEmpty() }
+
+        def flutterSdkPath = candidates.find { new File(it).exists() }
+        assert flutterSdkPath != null : "Unable to locate Flutter SDK. Set flutter.sdk in local.properties, FLUTTER_ROOT, or install via FVM."
+        return flutterSdkPath
+    }
+
+    def flutterSdkPath = resolveFlutterSdkPath()
+    def storageUrl = System.getenv('FLUTTER_STORAGE_BASE_URL') ?: 'https://storage.googleapis.com'
+    def engineRealm = new File(flutterSdkPath, 'bin/cache/engine.realm').text.trim()
+    def flutterMavenRepo = engineRealm ? "$storageUrl/${engineRealm}/download.flutter.io" : "$storageUrl/download.flutter.io"
 
     repositories {
         google()
         mavenCentral()
         gradlePluginPortal()
+        maven {
+            url = uri(flutterMavenRepo)
+        }
     }
 }
 
 plugins {
-    id "dev.flutter.flutter-plugin-loader" version "1.0.0"
-    id "com.android.library" version "8.1.0" apply false
-    id "org.jetbrains.kotlin.android" version "1.9.0" apply false
+    id "com.android.library" version "8.13.2" apply false
+    id "org.jetbrains.kotlin.android" version "2.2.21" apply false
 }
 
 dependencyResolutionManagement {
+    def resolveFlutterSdkPath = {
+        def properties = new Properties()
+        def localPropertiesFile = file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.withInputStream { properties.load(it) }
+        }
+
+        def candidates = [
+            properties.getProperty("flutter.sdk"),
+            System.getenv("FLUTTER_ROOT"),
+            new File(settingsDir.parentFile, ".fvm/flutter_sdk").path,
+            new File(System.getProperty("user.home"), "fvm/default").path,
+        ].findAll { it != null && !it.trim().isEmpty() }
+
+        def flutterSdkPath = candidates.find { new File(it).exists() }
+        assert flutterSdkPath != null : "Unable to locate Flutter SDK. Set flutter.sdk in local.properties, FLUTTER_ROOT, or install via FVM."
+        return flutterSdkPath
+    }
+
+    def flutterSdkPath = resolveFlutterSdkPath()
+    def storageUrl = System.getenv('FLUTTER_STORAGE_BASE_URL') ?: 'https://storage.googleapis.com'
+    def engineRealm = new File(flutterSdkPath, 'bin/cache/engine.realm').text.trim()
+    def flutterMavenRepo = engineRealm ? "$storageUrl/${engineRealm}/download.flutter.io" : "$storageUrl/download.flutter.io"
+
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
         maven {
-            url 'https://jitpack.io'
+            url = uri(flutterMavenRepo)
+        }
+        maven {
+            url = uri('https://jitpack.io')
         }
     }
-}
-
-def flutterProjectRoot = rootProject.projectDir.parentFile.toPath()
-def plugins = new Properties()
-def pluginsFile = new File(flutterProjectRoot.toFile(), '.flutter-plugins')
-if (pluginsFile.exists()) {
-    pluginsFile.withReader('UTF-8') { reader -> plugins.load(reader) }
-}
-
-plugins.each { name, path ->
-    def pluginDirectory = flutterProjectRoot.resolve(path).resolve('android').toFile()
-    include ":$name"
-    project(":$name").projectDir = pluginDirectory
 }
 
 rootProject.name = 'device_calendar'
 include ':app'
 
-// Simplified settings file for running unit tests
-// Flutter SDK path is not required for running Kotlin unit tests
+// This standalone Android project exists to run the plugin's Kotlin unit tests.
+// Resolve the Flutter embedding from the SDK's Maven repository instead of
+// relying on Flutter's plugin loader or a specific local installation layout.

@@ -2,7 +2,8 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    compileSdkVersion 34
+    namespace = 'com.builttoroam.devicecalendar'
+    compileSdk = 34
     
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -14,8 +15,8 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion 16
-        targetSdkVersion 34
+        minSdk = 16
+        targetSdk = 34
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     
@@ -25,16 +26,16 @@ android {
         }
     }
 
-    namespace 'com.builttoroam.devicecalendar'
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.21"
     implementation 'androidx.annotation:annotation:1.7.1'
     implementation 'com.google.code.gson:gson:2.10.1'
     
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.0'
     testImplementation 'org.mockito:mockito-core:5.7.0'
     testImplementation 'org.mockito.kotlin:mockito-kotlin:5.1.0'
 } 
