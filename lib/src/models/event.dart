@@ -60,6 +60,20 @@ class Event {
   /// This is only used when the event is a detached event from a recurring event series (For iOS only)
   TZDateTime? eventOriginalOccurrenceDate;
 
+  /// Android-only identity for the concrete recurring segment that produced this event.
+  String? recurringSegmentId;
+
+  /// Android-only identity for the broader recurring lineage across splits/exceptions.
+  String? recurringLineageId;
+
+  /// Android-only raw recurring identity fields for diagnostics and sync decisions.
+  String? androidOriginalId;
+  String? androidOriginalSyncId;
+  String? androidSyncId;
+  String? androidUid2445;
+  int? androidOriginalInstanceTime;
+  bool? androidIsException;
+
   ///Note for development:
   ///
   ///JSON field names are coded in dart, swift and kotlin to facilitate data exchange.
@@ -85,7 +99,15 @@ class Event {
       this.allDay = false,
       this.status,
       this.eventIsDetached = false,
-      this.eventOriginalOccurrenceDate});
+      this.eventOriginalOccurrenceDate,
+      this.recurringSegmentId,
+      this.recurringLineageId,
+      this.androidOriginalId,
+      this.androidOriginalSyncId,
+      this.androidSyncId,
+      this.androidUid2445,
+      this.androidOriginalInstanceTime,
+      this.androidIsException});
 
   ///Get Event from JSON.
   ///
@@ -185,14 +207,19 @@ class Event {
       // the actual last day of the event, then create local midnight.
       final adjustedEndUtc = endUtc?.subtract(const Duration(days: 1));
       end = adjustedEndUtc != null
-          ? TZDateTime(local, adjustedEndUtc.year, adjustedEndUtc.month, adjustedEndUtc.day)
+          ? TZDateTime(local, adjustedEndUtc.year, adjustedEndUtc.month,
+              adjustedEndUtc.day)
           : end;
 
       // DEBUG: Show timezone fix transformation
-      final eventIdShort = eventId?.substring(0, min(8, eventId?.length ?? 0)) ?? 'unknown';
-      debugPrint('🔧 ALL-DAY TIMEZONE FIX: ${title ?? 'untitled'} ($eventIdShort)');
-      debugPrint('   BEFORE: start=${beforeStart?.toIso8601String()}, end=${beforeEnd?.toIso8601String()}');
-      debugPrint('   AFTER:  start=${start?.toIso8601String()}, end=${end?.toIso8601String()}');
+      final eventIdShort =
+          eventId?.substring(0, min(8, eventId?.length ?? 0)) ?? 'unknown';
+      debugPrint(
+          '🔧 ALL-DAY TIMEZONE FIX: ${title ?? 'untitled'} ($eventIdShort)');
+      debugPrint(
+          '   BEFORE: start=${beforeStart?.toIso8601String()}, end=${beforeEnd?.toIso8601String()}');
+      debugPrint(
+          '   AFTER:  start=${start?.toIso8601String()}, end=${end?.toIso8601String()}');
     }
     location = json['eventLocation'];
     availability = parseStringToAvailability(json['availability']);
@@ -224,6 +251,14 @@ class Event {
     }
 
     eventIsDetached = json['eventIsDetached'];
+    recurringSegmentId = json['recurringSegmentId'];
+    recurringLineageId = json['recurringLineageId'];
+    androidOriginalId = json['androidOriginalId'];
+    androidOriginalSyncId = json['androidOriginalSyncId'];
+    androidSyncId = json['androidSyncId'];
+    androidUid2445 = json['androidUid2445'];
+    androidOriginalInstanceTime = json['androidOriginalInstanceTime'];
+    androidIsException = json['androidIsException'];
 
     var occurrenceDateTimestamp = json['eventOccurrenceDate'];
     eventOriginalOccurrenceDate = occurrenceDateTimestamp != null
@@ -265,9 +300,8 @@ class Event {
             }
 
             // Add UNTIL if present
-            final untilPart = rfc
-                .split(';')
-                .firstWhereOrNull((p) => p.startsWith('UNTIL='));
+            final untilPart =
+                rfc.split(';').firstWhereOrNull((p) => p.startsWith('UNTIL='));
             if (untilPart != null) {
               // Parse UNTIL date from RFC format (e.g., UNTIL=20251211T045959Z)
               final untilStr = untilPart.substring(6); // Remove "UNTIL="
@@ -284,7 +318,8 @@ class Event {
                   final hour = untilStr.substring(9, 11);
                   final minute = untilStr.substring(11, 13);
                   final second = untilStr.substring(13, 15);
-                  rfcMap['until'] = '$year-$month-${day}T$hour:$minute:${second}Z';
+                  rfcMap['until'] =
+                      '$year-$month-${day}T$hour:$minute:${second}Z';
                 } else {
                   rfcMap['until'] = '$year-$month-${day}T00:00:00Z';
                 }
@@ -295,9 +330,8 @@ class Event {
             }
 
             // Add COUNT if present
-            final countPart = rfc
-                .split(';')
-                .firstWhereOrNull((p) => p.startsWith('COUNT='));
+            final countPart =
+                rfc.split(';').firstWhereOrNull((p) => p.startsWith('COUNT='));
             if (countPart != null) {
               rfcMap['count'] = int.parse(countPart.substring(6));
             }
@@ -356,6 +390,14 @@ class Event {
     data['eventIsDetached'] = eventIsDetached;
     data['eventOriginalOccurrenceDate'] =
         eventOriginalOccurrenceDate?.millisecondsSinceEpoch;
+    data['recurringSegmentId'] = recurringSegmentId;
+    data['recurringLineageId'] = recurringLineageId;
+    data['androidOriginalId'] = androidOriginalId;
+    data['androidOriginalSyncId'] = androidOriginalSyncId;
+    data['androidSyncId'] = androidSyncId;
+    data['androidUid2445'] = androidUid2445;
+    data['androidOriginalInstanceTime'] = androidOriginalInstanceTime;
+    data['androidIsException'] = androidIsException;
 
     if (attendees != null) {
       data['attendees'] = attendees?.map((a) => a?.toJson()).toList();
@@ -432,12 +474,14 @@ class Event {
 
   /// Sanitizes recurrence rule to handle malformed rules from third-party calendar apps
   /// Following the "graceful degradation" approach similar to libical
-  static Map<String, dynamic> _sanitizeRecurrenceRule(Map<String, dynamic> rule) {
+  static Map<String, dynamic> _sanitizeRecurrenceRule(
+      Map<String, dynamic> rule) {
     final sanitized = Map<String, dynamic>.from(rule);
     final freq = sanitized['freq'] as String?;
 
     // Handle RFC 5545 violation: BYYEARDAY MUST NOT be specified for DAILY, WEEKLY, or MONTHLY
-    if (freq != null && ['DAILY', 'WEEKLY', 'MONTHLY'].contains(freq.toUpperCase())) {
+    if (freq != null &&
+        ['DAILY', 'WEEKLY', 'MONTHLY'].contains(freq.toUpperCase())) {
       if (sanitized.containsKey('byyearday')) {
         sanitized.remove('byyearday');
       }

@@ -3,8 +3,8 @@ package com.builttoroam.devicecalendar
 import android.app.Activity
 import android.content.Context
 import androidx.annotation.NonNull
+import com.builttoroam.devicecalendar.common.AndroidDayOfWeekCodec
 import com.builttoroam.devicecalendar.common.Constants
-import com.builttoroam.devicecalendar.common.DayOfWeek
 import com.builttoroam.devicecalendar.common.RecurrenceFrequency
 import com.builttoroam.devicecalendar.models.*
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -252,7 +252,9 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
 
         recurrenceRuleArgs[DAYS_OF_WEEK_ARGUMENT]?.toListOf<Int>()?.let { dayIndices ->
-            recurrenceRule.daysOfWeek = dayIndices.map { DayOfWeek.values()[it] }.toMutableList()
+            recurrenceRule.daysOfWeek = dayIndices
+                .mapNotNull(AndroidDayOfWeekCodec::fromCalendarContractValue)
+                .toMutableList()
         }
 
         (recurrenceRuleArgs[DAY_OF_MONTH_ARGUMENT] as? Int)?.let {

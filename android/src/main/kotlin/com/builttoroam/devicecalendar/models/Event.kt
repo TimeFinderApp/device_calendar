@@ -18,4 +18,12 @@ class Event {
     var reminders: MutableList<Reminder> = mutableListOf()
     var availability: Availability? = null
     var eventStatus: EventStatus? = null
+    var recurringSegmentId: String? = null
+    var recurringLineageId: String? = null
+    var androidOriginalId: String? = null
+    var androidOriginalSyncId: String? = null
+    var androidSyncId: String? = null
+    var androidUid2445: String? = null
+    var androidOriginalInstanceTime: Long? = null
+    var androidIsException: Boolean? = null
 }

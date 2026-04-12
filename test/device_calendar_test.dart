@@ -241,4 +241,32 @@ void main() {
     expect(newEvent.availability, equals(event.availability));
     expect(newEvent.status, equals(event.status));
   });
+
+  test('Event preserves Android recurring identity metadata', () {
+    final event = Event(
+      'calendarId',
+      eventId: 'eventId',
+      title: 'Recurring Event',
+      start: TZDateTime(local, 2026, 4, 21, 9),
+      end: TZDateTime(local, 2026, 4, 21, 10),
+      recurringSegmentId: 'segment-1',
+      recurringLineageId: 'lineage-1',
+      androidOriginalId: '42',
+      androidOriginalSyncId: 'orig-sync',
+      androidSyncId: 'segment-sync',
+      androidUid2445: 'uid-2445',
+      androidOriginalInstanceTime: 1710000000000,
+      androidIsException: true,
+    );
+
+    final decoded = Event.fromJson(event.toJson());
+    expect(decoded.recurringSegmentId, equals('segment-1'));
+    expect(decoded.recurringLineageId, equals('lineage-1'));
+    expect(decoded.androidOriginalId, equals('42'));
+    expect(decoded.androidOriginalSyncId, equals('orig-sync'));
+    expect(decoded.androidSyncId, equals('segment-sync'));
+    expect(decoded.androidUid2445, equals('uid-2445'));
+    expect(decoded.androidOriginalInstanceTime, equals(1710000000000));
+    expect(decoded.androidIsException, isTrue);
+  });
 }

@@ -52,13 +52,19 @@ import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTIO
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_END_TIMEZONE_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_EVENT_LOCATION_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_ID_INDEX
+import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_ORIGINAL_INSTANCE_TIME_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_ORIGINAL_ID_INDEX
+import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_ORIGINAL_SYNC_ID_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_RECURRING_RULE_INDEX
+import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_SYNC_ID_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_START_TIMEZONE_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_STATUS_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_TITLE_INDEX
+import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTION_UID_2445_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.REMINDER_MINUTES_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.REMINDER_PROJECTION
+import com.builttoroam.devicecalendar.common.AndroidDayOfWeekCodec
+import com.builttoroam.devicecalendar.common.AndroidRecurringIdentityNormalizer
 import com.builttoroam.devicecalendar.common.DayOfWeek
 import com.builttoroam.devicecalendar.common.ErrorCodes.Companion.GENERIC_ERROR
 import com.builttoroam.devicecalendar.common.ErrorCodes.Companion.INVALID_ARGUMENT
@@ -871,6 +877,10 @@ class CalendarDelegate(
         val availability = parseAvailability(cursor.getInt(EVENT_PROJECTION_AVAILABILITY_INDEX))
         val eventStatus = parseEventStatus(cursor.getInt(EVENT_PROJECTION_STATUS_INDEX))
         val originalId = cursor.getString(EVENT_PROJECTION_ORIGINAL_ID_INDEX)
+        val syncId = cursor.getString(EVENT_PROJECTION_SYNC_ID_INDEX)
+        val originalSyncId = cursor.getString(EVENT_PROJECTION_ORIGINAL_SYNC_ID_INDEX)
+        val uid2445 = cursor.getString(EVENT_PROJECTION_UID_2445_INDEX)
+        val originalInstanceTime = cursor.getLongOrNull(EVENT_PROJECTION_ORIGINAL_INSTANCE_TIME_INDEX)
 
         // Log when Instances table returns null RRULE (Android quirk - requires fallback query)
         if (recurringRule == null && originalId != null) {
@@ -889,6 +899,11 @@ class CalendarDelegate(
         event.eventAllDay = allDay
         event.eventLocation = location
         event.eventURL = url
+        event.androidOriginalId = originalId
+        event.androidOriginalSyncId = originalSyncId
+        event.androidSyncId = syncId
+        event.androidUid2445 = uid2445
+        event.androidOriginalInstanceTime = originalInstanceTime
         
         // RRULE lookup: Use batch-fetched map if available, otherwise fall back to individual queries
         // The batch approach eliminates N individual ContentResolver queries (one per recurring instance)
@@ -960,6 +975,19 @@ class CalendarDelegate(
         if (event.recurrenceRule == null && (recurringRule != null || originalId != null)) {
             Log.w("DeviceCalendar", "Event $eventId ('${title?.take(30)}'): Expected recurring event but recurrenceRule is null after all fallback attempts")
         }
+
+        val recurringIdentity = AndroidRecurringIdentityNormalizer.normalize(
+            eventId = eventId.toString(),
+            hasRecurrence = event.recurrenceRule != null,
+            originalId = originalId,
+            originalSyncId = originalSyncId,
+            syncId = syncId,
+            uid2445 = uid2445,
+            originalInstanceTime = originalInstanceTime,
+        )
+        event.androidIsException = recurringIdentity.isException
+        event.recurringSegmentId = recurringIdentity.recurringSegmentId
+        event.recurringLineageId = recurringIdentity.recurringLineageId
         
         event.eventStartTimeZone = startTimeZone
         event.eventEndTimeZone = endTimeZone
@@ -1046,7 +1074,7 @@ class CalendarDelegate(
             when (rfcRecurrenceRule.freq) {
                 Freq.WEEKLY, Freq.MONTHLY, Freq.YEARLY -> {
                     recurrenceRule.daysOfWeek = rfcRecurrenceRule.byDayPart?.mapNotNull {
-                        DayOfWeek.values().find { dayOfWeek -> dayOfWeek.ordinal == it.weekday.ordinal }
+                        AndroidDayOfWeekCodec.fromDmfsWeekday(it.weekday)
                     }?.toMutableList()
                 }
                 else -> recurrenceRule.daysOfWeek = null
@@ -1195,6 +1223,14 @@ class CalendarDelegate(
         return api <= android.os.Build.VERSION.SDK_INT
     }
 
+    private fun Cursor.getLongOrNull(index: Int): Long? {
+        if (isNull(index)) {
+            return null
+        }
+
+        return getLong(index)
+    }
+
     private fun buildRecurrenceRuleParams(recurrenceRule: RecurrenceRule): String {
         val frequencyParam = when (recurrenceRule.recurrenceFrequency) {
             RecurrenceFrequency.DAILY -> Freq.DAILY
@@ -1243,9 +1279,7 @@ class CalendarDelegate(
         }
 
         return recurrenceRule.daysOfWeek?.mapNotNull { dayOfWeek ->
-            Weekday.values().firstOrNull {
-                it.ordinal == dayOfWeek.ordinal
-            }
+            AndroidDayOfWeekCodec.toDmfsWeekday(dayOfWeek)
         }?.map {
             org.dmfs.rfc5545.recur.RecurrenceRule.WeekdayNum(recurrenceRule.weekOfMonth ?: 0, it)
         }
