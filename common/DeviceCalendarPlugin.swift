@@ -400,7 +400,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         }
     }
 
-    private func createCalendar(_ call: FlutterMethodCall, _ result: FlutterResult) {
+    private func createCalendar(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
         let arguments = call.arguments as! [String: AnyObject]
         let calendar = EKCalendar.init(for: EKEntityType.event, eventStore: eventStore)
         do {
