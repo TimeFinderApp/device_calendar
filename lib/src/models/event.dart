@@ -112,7 +112,7 @@ class Event {
   ///Get Event from JSON.
   ///
   ///Sample JSON:
-  ///{calendarId: 00, eventId: 0000, eventTitle: Sample Event, eventDescription: This is a sample event, eventStartDate: 1563719400000, eventStartTimeZone: Asia/Hong_Kong, eventEndDate: 1640532600000, eventEndTimeZone: Asia/Hong_Kong, eventAllDay: false, eventLocation: Yuenlong Station, eventURL: null, availability: BUSY, attendees: [{name: commonfolk, emailAddress: total.loss@hong.com, role: 1, isOrganizer: false, attendanceStatus: 3}], eventOccurrenceDate: 1563719400000, eventIsDetached: false, reminders: [{minutes: 39}]}
+  ///{calendarId: 00, eventId: 0000, eventTitle: Sample Event, eventDescription: This is a sample event, eventStartDate: 1563719400000, eventStartTimeZone: Asia/Hong_Kong, eventEndDate: 1640532600000, eventEndTimeZone: Asia/Hong_Kong, eventAllDay: false, eventLocation: Yuenlong Station, eventURL: null, availability: BUSY, attendees: [{name: commonfolk, emailAddress: total.loss@hong.com, role: 1, isOrganizer: false, attendanceStatus: 3}], eventOriginalOccurrenceDate: 1563719400000, eventIsDetached: false, reminders: [{minutes: 39}]}
   Event.fromJson(Map<String, dynamic>? json) {
     if (json == null) {
       throw ArgumentError(ErrorMessages.fromJsonMapIsNull);
@@ -229,7 +229,7 @@ class Event {
     if (foundUrl?.isEmpty ?? true) {
       url = null;
     } else {
-      url = Uri.dataFromString(foundUrl as String);
+      url = Uri.tryParse(foundUrl as String);
     }
 
     if (json['attendees'] != null) {
@@ -260,7 +260,8 @@ class Event {
     androidOriginalInstanceTime = json['androidOriginalInstanceTime'];
     androidIsException = json['androidIsException'];
 
-    var occurrenceDateTimestamp = json['eventOccurrenceDate'];
+    var occurrenceDateTimestamp =
+        json['eventOriginalOccurrenceDate'] ?? json['eventOccurrenceDate'];
     eventOriginalOccurrenceDate = occurrenceDateTimestamp != null
         ? TZDateTime.fromMillisecondsSinceEpoch(
             startTimeZone, occurrenceDateTimestamp)
@@ -384,7 +385,7 @@ class Event {
     data['eventEndTimeZone'] = end?.location.name;
     data['eventAllDay'] = allDay;
     data['eventLocation'] = location;
-    data['eventURL'] = url?.data?.contentText;
+    data['eventURL'] = url?.toString();
     data['availability'] = availability.enumToString;
     data['eventStatus'] = status?.enumToString;
     data['eventIsDetached'] = eventIsDetached;

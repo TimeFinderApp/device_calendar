@@ -208,14 +208,16 @@ void main() {
         title: 'Test Event',
         start: startTime,
         location: 'Seattle, Washington',
-        url: Uri.dataFromString('http://www.example.com'),
+        url: Uri.parse('https://www.example.com/calendar?id=1'),
         end: endTime,
         attendees: [attendee],
         description: 'Test description',
         recurrenceRule: recurrence,
         reminders: [reminder],
         availability: Availability.Busy,
-        status: EventStatus.Confirmed);
+        status: EventStatus.Confirmed,
+        eventIsDetached: true,
+        eventOriginalOccurrenceDate: startTime);
 
     final stringEvent = event.toJson();
     expect(stringEvent, isNotNull);
@@ -240,6 +242,34 @@ void main() {
     expect(newEvent.reminders?.length, equals(1));
     expect(newEvent.availability, equals(event.availability));
     expect(newEvent.status, equals(event.status));
+    expect(newEvent.eventIsDetached, isTrue);
+    expect(
+      newEvent.eventOriginalOccurrenceDate?.millisecondsSinceEpoch,
+      equals(event.eventOriginalOccurrenceDate?.millisecondsSinceEpoch),
+    );
+  });
+
+  test('Event_FromJson_StillReadsLegacyOccurrenceDateKey', () {
+    final legacyStart = TZDateTime(local, 2026, 4, 21, 9);
+    final legacyEnd = TZDateTime(local, 2026, 4, 21, 10);
+    final legacyJson = {
+      'calendarId': 'calendarId',
+      'eventId': 'eventId',
+      'eventTitle': 'Legacy Event',
+      'eventStartDate': legacyStart.millisecondsSinceEpoch,
+      'eventStartTimeZone': legacyStart.location.name,
+      'eventEndDate': legacyEnd.millisecondsSinceEpoch,
+      'eventEndTimeZone': legacyEnd.location.name,
+      'eventAllDay': false,
+      'eventOccurrenceDate': legacyStart.millisecondsSinceEpoch,
+    };
+
+    final event = Event.fromJson(legacyJson);
+
+    expect(
+      event.eventOriginalOccurrenceDate?.millisecondsSinceEpoch,
+      legacyStart.millisecondsSinceEpoch,
+    );
   });
 
   test('Event preserves Android recurring identity metadata', () {
