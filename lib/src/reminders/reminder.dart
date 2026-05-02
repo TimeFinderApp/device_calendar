@@ -5,25 +5,30 @@ class Reminder {
   String? id;
   String title;
   DateTime? dueDate;
+  bool hasTime;
   int priority;
   bool isCompleted;
   String? notes;
   DateTime? lastModifiedDate;
 
-  Reminder(
-      {required this.list,
-      this.id,
-      required this.title,
-      this.dueDate,
-      this.priority = 0,
-      this.isCompleted = false,
-      this.notes,
-      this.lastModifiedDate});
+  Reminder({
+    required this.list,
+    this.id,
+    required this.title,
+    this.dueDate,
+    bool? hasTime,
+    this.priority = 0,
+    this.isCompleted = false,
+    this.notes,
+    this.lastModifiedDate,
+  }) : hasTime = hasTime ?? _inferHasTime(dueDate);
 
   Reminder.fromJson(Map<String, dynamic> json)
       : list = RemList.fromJson(json['list']),
         id = json['id'],
         title = json['title'],
+        hasTime =
+            json['hasTime'] as bool? ?? _jsonDueDateHasTime(json['dueDate']),
         priority = json['priority'],
         isCompleted = json['isCompleted'],
         notes = json['notes'] {
@@ -56,6 +61,7 @@ class Reminder {
         'list': list.id,
         'id': id,
         'title': title,
+        'hasTime': hasTime,
         'dueDate': dueDate == null
             ? null
             : {
@@ -76,4 +82,27 @@ class Reminder {
   String toString() =>
       '''List: ${list.title}\tTitle: $title\tdueDate: $dueDate\tPriority: 
       $priority\tisComplete: $isCompleted\tNotes: $notes\tID: $id\tLastModified: $lastModifiedDate''';
+
+  static bool _inferHasTime(DateTime? dueDate) {
+    if (dueDate == null) {
+      return false;
+    }
+
+    return dueDate.hour != 0 ||
+        dueDate.minute != 0 ||
+        dueDate.second != 0 ||
+        dueDate.millisecond != 0 ||
+        dueDate.microsecond != 0;
+  }
+
+  static bool _jsonDueDateHasTime(dynamic rawDueDate) {
+    final dueDateMap = rawDueDate is Map ? rawDueDate : null;
+    if (dueDateMap == null) {
+      return false;
+    }
+
+    return dueDateMap.containsKey('hour') ||
+        dueDateMap.containsKey('minute') ||
+        dueDateMap.containsKey('second');
+  }
 }

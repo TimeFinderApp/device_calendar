@@ -129,6 +129,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         let id: String
         let title: String
         let dueDate: DateComponents?
+        let hasTime: Bool
         let priority: Int
         let isCompleted: Bool
         let notes: String?
@@ -139,6 +140,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             self.id = reminder.calendarItemIdentifier
             self.title = reminder.title
             self.dueDate = reminder.dueDateComponents
+            self.hasTime = DeviceCalendarPlugin.reminderHasTime(reminder.dueDateComponents)
             self.priority = reminder.priority
             self.isCompleted = reminder.isCompleted
             self.notes = reminder.notes
@@ -171,6 +173,17 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     static let channelName = "plugins.builttoroam.com/device_calendar"
+
+    private static func reminderHasTime(_ dueDateComponents: DateComponents?) -> Bool {
+        guard let dueDateComponents else {
+            return false
+        }
+
+        return dueDateComponents.hour != nil ||
+            dueDateComponents.minute != nil ||
+            dueDateComponents.second != nil
+    }
+
     let notFoundErrorCode = "404"
     let notAllowed = "405"
     let genericError = "500"
@@ -1558,8 +1571,24 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             reminder.priority = json["priority"] as? Int ?? 0
             reminder.isCompleted = json["isCompleted"] as? Bool ?? false
             reminder.notes = json["notes"] as? String
+            let hasTime = json["hasTime"] as? Bool ?? false
             if let date = json["dueDate"] as? [String: Int] {
-                reminder.dueDateComponents = DateComponents(year: date["year"], month: date["month"], day: date["day"])
+                if hasTime {
+                    reminder.dueDateComponents = DateComponents(
+                        year: date["year"],
+                        month: date["month"],
+                        day: date["day"],
+                        hour: date["hour"] ?? 0,
+                        minute: date["minute"] ?? 0,
+                        second: date["second"] ?? 0
+                    )
+                } else {
+                    reminder.dueDateComponents = DateComponents(
+                        year: date["year"],
+                        month: date["month"],
+                        day: date["day"]
+                    )
+                }
             } else {
                 reminder.dueDateComponents = nil
             }
