@@ -1,3 +1,8 @@
+// This file is the single canonical Swift source for the device_calendar plugin.
+// It is symlinked into both ios/device_calendar/Sources/device_calendar/ and
+// macos/device_calendar/Sources/device_calendar/ so the iOS and macOS Swift
+// packages share one copy. Edits made here are reflected on both platforms.
+
 import EventKit
 import Foundation
 
