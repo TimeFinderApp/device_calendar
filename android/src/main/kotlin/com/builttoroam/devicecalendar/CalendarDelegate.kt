@@ -35,8 +35,12 @@ import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJEC
 import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJECTION_DISPLAY_NAME_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJECTION_ID_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJECTION_IS_PRIMARY_INDEX
+import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJECTION_OLDER_API_SYNC_EVENTS_INDEX
+import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJECTION_OLDER_API_VISIBLE_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJECTION_OLDER_API
 import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJECTION_OWNER_ACCOUNT_INDEX
+import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJECTION_SYNC_EVENTS_INDEX
+import com.builttoroam.devicecalendar.common.Constants.Companion.CALENDAR_PROJECTION_VISIBLE_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_INSTANCE_DELETION
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_INSTANCE_DELETION_BEGIN_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_INSTANCE_DELETION_END_INDEX
@@ -426,6 +430,15 @@ class CalendarDelegate(
                 val events: MutableList<Event> = mutableListOf()
 
                 try {
+                    if (eventsCursor?.count == 0) {
+                        logZeroInstanceProviderProbe(
+                            calendar = calendar,
+                            calendarId = calendarId,
+                            startDate = startDate,
+                            endDate = endDate,
+                            contentResolver = contentResolver
+                        )
+                    }
                     val queriedEventIds = mutableSetOf<Long>()
                     val originalIds = mutableSetOf<Long>()
                     while (eventsCursor?.moveToNext() == true) {
@@ -912,10 +925,74 @@ class CalendarDelegate(
         if (atLeastAPI(17)) {
             val isPrimary = cursor.getString(CALENDAR_PROJECTION_IS_PRIMARY_INDEX)
             calendar.isDefault = isPrimary == "1"
+            calendar.isVisible = cursor.getInt(CALENDAR_PROJECTION_VISIBLE_INDEX) > 0
+            calendar.syncEvents = cursor.getInt(CALENDAR_PROJECTION_SYNC_EVENTS_INDEX) > 0
         } else {
             calendar.isDefault = false
+            calendar.isVisible = cursor.getInt(CALENDAR_PROJECTION_OLDER_API_VISIBLE_INDEX) > 0
+            calendar.syncEvents = cursor.getInt(CALENDAR_PROJECTION_OLDER_API_SYNC_EVENTS_INDEX) > 0
         }
         return calendar
+    }
+
+    private fun logZeroInstanceProviderProbe(
+        calendar: Calendar,
+        calendarId: String,
+        startDate: Long?,
+        endDate: Long?,
+        contentResolver: ContentResolver?
+    ) {
+        var rawEventsCursor: Cursor? = null
+        try {
+            rawEventsCursor = contentResolver?.query(
+                CalendarContract.Events.CONTENT_URI,
+                arrayOf(
+                    CalendarContract.Events._ID,
+                    CalendarContract.Events.DTSTART,
+                    CalendarContract.Events.DTEND,
+                    CalendarContract.Events.RRULE
+                ),
+                "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.DELETED} != 1",
+                arrayOf(calendarId),
+                null
+            )
+
+            var rawEventCount = 0
+            var rawRecurringEventCount = 0
+            var rawNonRecurringEventsOverlappingWindow = 0
+            val cursor = rawEventsCursor
+            while (cursor?.moveToNext() == true) {
+                rawEventCount++
+                val eventStart = cursor.getLong(1)
+                val eventEnd = if (cursor.isNull(2)) eventStart else cursor.getLong(2)
+                val recurrenceRule = cursor.getString(3)
+                if (!recurrenceRule.isNullOrEmpty()) {
+                    rawRecurringEventCount++
+                } else if ((endDate == null || eventStart <= endDate) &&
+                    (startDate == null || eventEnd >= startDate)) {
+                    rawNonRecurringEventsOverlappingWindow++
+                }
+            }
+
+            logDiagnostic("info", "Zero-instance Android calendar provider probe", mapOf(
+                "calendar_id" to calendarId,
+                "account_type" to calendar.accountType,
+                "is_visible" to calendar.isVisible,
+                "sync_events" to calendar.syncEvents,
+                "query_start_ms" to (startDate ?: 0L),
+                "query_end_ms" to (endDate ?: 0L),
+                "raw_event_count" to rawEventCount,
+                "raw_recurring_event_count" to rawRecurringEventCount,
+                "raw_non_recurring_events_overlapping_window" to rawNonRecurringEventsOverlappingWindow
+            ))
+        } catch (e: Exception) {
+            logDiagnostic("warning", "Android calendar provider probe failed", mapOf(
+                "calendar_id" to calendarId,
+                "error" to (e.message ?: "unknown error")
+            ))
+        } finally {
+            rawEventsCursor?.close()
+        }
     }
 
     private fun parseEvent(calendarId: String, cursor: Cursor?, rruleMap: Map<Long, String?>? = null): Event? {

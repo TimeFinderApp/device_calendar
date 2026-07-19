@@ -12,6 +12,14 @@ class Calendar {
   /// Read-only. If the calendar is the default
   bool? isDefault;
 
+  /// Read-only. If Android exposes this calendar as visible.
+  /// Not available on iOS/macOS (null).
+  bool? isVisible;
+
+  /// Read-only. If Android's Calendar Provider is configured to sync events.
+  /// Not available on iOS/macOS (null).
+  bool? syncEvents;
+
   /// Read-only. Color of the calendar
   int? color;
 
@@ -36,6 +44,8 @@ class Calendar {
       this.name,
       this.isReadOnly,
       this.isDefault,
+      this.isVisible,
+      this.syncEvents,
       this.color,
       this.accountName,
       this.accountType,
@@ -47,6 +57,8 @@ class Calendar {
     name = json['name'];
     isReadOnly = json['isReadOnly'];
     isDefault = json['isDefault'];
+    isVisible = json['isVisible'];
+    syncEvents = json['syncEvents'];
     color = json['color'];
     accountName = json['accountName'];
     accountType = json['accountType'];
@@ -60,6 +72,8 @@ class Calendar {
       'name': name,
       'isReadOnly': isReadOnly,
       'isDefault': isDefault,
+      'isVisible': isVisible,
+      'syncEvents': syncEvents,
       'color': color,
       'accountName': accountName,
       'accountType': accountType,

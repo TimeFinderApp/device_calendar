@@ -10,4 +10,6 @@ class Calendar(
 ) {
     var isReadOnly: Boolean = false
     var isDefault: Boolean = false
+    var isVisible: Boolean = true
+    var syncEvents: Boolean = true
 }

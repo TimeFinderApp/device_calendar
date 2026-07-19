@@ -12,6 +12,10 @@ class Constants {
         const val CALENDAR_PROJECTION_ACCESS_LEVEL_INDEX: Int = 5
         const val CALENDAR_PROJECTION_COLOR_INDEX: Int = 6
         const val CALENDAR_PROJECTION_IS_PRIMARY_INDEX: Int = 7
+        const val CALENDAR_PROJECTION_VISIBLE_INDEX: Int = 8
+        const val CALENDAR_PROJECTION_SYNC_EVENTS_INDEX: Int = 9
+        const val CALENDAR_PROJECTION_OLDER_API_VISIBLE_INDEX: Int = 7
+        const val CALENDAR_PROJECTION_OLDER_API_SYNC_EVENTS_INDEX: Int = 8
 
         // API 17 or higher
         val CALENDAR_PROJECTION: Array<String> = arrayOf(
@@ -22,7 +26,9 @@ class Constants {
             CalendarContract.Calendars.OWNER_ACCOUNT,                 // 4
             CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,         // 5
             CalendarContract.Calendars.CALENDAR_COLOR,                // 6
-            CalendarContract.Calendars.IS_PRIMARY                     // 7
+            CalendarContract.Calendars.IS_PRIMARY,                    // 7
+            CalendarContract.Calendars.VISIBLE,                       // 8
+            CalendarContract.Calendars.SYNC_EVENTS                    // 9
         )
 
         // API 16 or lower
@@ -33,7 +39,9 @@ class Constants {
             CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,         // 3
             CalendarContract.Calendars.OWNER_ACCOUNT,                 // 4
             CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,         // 5
-            CalendarContract.Calendars.CALENDAR_COLOR                 // 6
+            CalendarContract.Calendars.CALENDAR_COLOR,                // 6
+            CalendarContract.Calendars.VISIBLE,                       // 7
+            CalendarContract.Calendars.SYNC_EVENTS                    // 8
         )
 
         const val EVENT_PROJECTION_ID_INDEX: Int = 0
