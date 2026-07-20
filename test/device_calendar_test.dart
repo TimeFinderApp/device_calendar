@@ -60,6 +60,29 @@ void main() {
     expect(result.data?[0].name, fakeCalendarName);
   });
 
+  test('SetCalendarSyncEvents_PassesArguments_Correctly', () async {
+    const calendarId = '36';
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
+      log.add(methodCall);
+      return true;
+    });
+
+    final result = await deviceCalendarPlugin.setCalendarSyncEvents(
+      calendarId,
+      enabled: true,
+    );
+
+    expect(result.isSuccess, true);
+    expect(result.data, true);
+    expect(log, <Matcher>[
+      isMethodCall('setCalendarSyncEvents', arguments: <String, dynamic>{
+        'calendarId': calendarId,
+        'syncEvents': true,
+      }),
+    ]);
+  });
+
   test('RetrieveEvents_CalendarId_IsRequired', () async {
     const String? calendarId = null;
     const params = RetrieveEventsParams();

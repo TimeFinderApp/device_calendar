@@ -32,6 +32,7 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
     private val HAS_PERMISSIONS_METHOD = "hasPermissions"
     private val RETRIEVE_CALENDARS_METHOD = "retrieveCalendars"
     private val RETRIEVE_EVENTS_METHOD = "retrieveEvents"
+    private val SET_CALENDAR_SYNC_EVENTS_METHOD = "setCalendarSyncEvents"
     private val DELETE_EVENT_METHOD = "deleteEvent"
     private val DELETE_EVENT_INSTANCE_METHOD = "deleteEventInstance"
     private val CREATE_OR_UPDATE_EVENT_METHOD = "createOrUpdateEvent"
@@ -42,6 +43,7 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     // Method arguments
     private val CALENDAR_ID_ARGUMENT = "calendarId"
+    private val SYNC_EVENTS_ARGUMENT = "syncEvents"
     private val CALENDAR_NAME_ARGUMENT = "calendarName"
     private val START_DATE_ARGUMENT = "startDate"
     private val END_DATE_ARGUMENT = "endDate"
@@ -139,6 +141,13 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
                 val eventIds = call.argument<List<String>>(EVENT_IDS_ARGUMENT) ?: listOf()
 
                 _calendarDelegate.retrieveEvents(calendarId!!, startDate, endDate, eventIds, result)
+            }
+
+            SET_CALENDAR_SYNC_EVENTS_METHOD -> {
+                val calendarId = call.argument<String>(CALENDAR_ID_ARGUMENT)
+                val syncEvents = call.argument<Boolean>(SYNC_EVENTS_ARGUMENT)
+
+                _calendarDelegate.setCalendarSyncEvents(calendarId!!, syncEvents!!, result)
             }
 
             CREATE_OR_UPDATE_EVENT_METHOD -> {

@@ -5,6 +5,7 @@ class ChannelConstants {
   static const String methodNameHasPermissions = 'hasPermissions';
   static const String methodNameRetrieveCalendars = 'retrieveCalendars';
   static const String methodNameRetrieveEvents = 'retrieveEvents';
+  static const String methodNameSetCalendarSyncEvents = 'setCalendarSyncEvents';
   static const String methodNameDeleteEvent = 'deleteEvent';
   static const String methodNameDeleteEventInstance = 'deleteEventInstance';
   static const String methodNameCreateOrUpdateEvent = 'createOrUpdateEvent';
@@ -15,6 +16,7 @@ class ChannelConstants {
   static const String methodNameStopCalendarTracking = 'stopCalendarTracking';
 
   static const String parameterNameCalendarId = 'calendarId';
+  static const String parameterNameSyncEvents = 'syncEvents';
   static const String parameterNameStartDate = 'startDate';
   static const String parameterNameEndDate = 'endDate';
   static const String parameterNameEventId = 'eventId';

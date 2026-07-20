@@ -77,6 +77,24 @@ class DeviceCalendarPlugin {
     );
   }
 
+  /// Enables or disables Android Calendar Provider event storage for a
+  /// calendar. Android schedules the owning account's sync when this changes.
+  Future<Result<bool>> setCalendarSyncEvents(
+    String? calendarId, {
+    required bool enabled,
+  }) async {
+    return _invokeChannelMethod(
+      ChannelConstants.methodNameSetCalendarSyncEvents,
+      assertParameters: (result) {
+        _validateCalendarIdParameter(result, calendarId);
+      },
+      arguments: () => <String, Object?>{
+        ChannelConstants.parameterNameCalendarId: calendarId,
+        ChannelConstants.parameterNameSyncEvents: enabled,
+      },
+    );
+  }
+
   /// Retrieves the events from the specified calendar
   ///
   /// The `calendarId` paramter is the id of the calendar that plugin will return events for

@@ -1,6 +1,7 @@
 package com.builttoroam.devicecalendar
 
 import android.Manifest
+import android.accounts.Account
 import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.content.ContentUris
@@ -69,6 +70,7 @@ import com.builttoroam.devicecalendar.common.Constants.Companion.EVENT_PROJECTIO
 import com.builttoroam.devicecalendar.common.Constants.Companion.REMINDER_MINUTES_INDEX
 import com.builttoroam.devicecalendar.common.Constants.Companion.REMINDER_PROJECTION
 import com.builttoroam.devicecalendar.common.AndroidDayOfWeekCodec
+import com.builttoroam.devicecalendar.common.AndroidCalendarProviderProbeClassifier
 import com.builttoroam.devicecalendar.common.AndroidRecurringIdentityNormalizer
 import com.builttoroam.devicecalendar.common.DayOfWeek
 import com.builttoroam.devicecalendar.common.ErrorCodes.Companion.GENERIC_ERROR
@@ -430,12 +432,14 @@ class CalendarDelegate(
                 val events: MutableList<Event> = mutableListOf()
 
                 try {
-                    if (eventsCursor?.count == 0) {
+                    if (eventsCursor == null || eventsCursor.count == 0) {
                         logZeroInstanceProviderProbe(
                             calendar = calendar,
                             calendarId = calendarId,
                             startDate = startDate,
                             endDate = endDate,
+                            eventsUri = eventsUri,
+                            instanceCursorWasNull = eventsCursor == null,
                             contentResolver = contentResolver
                         )
                     }
@@ -531,6 +535,69 @@ class CalendarDelegate(
         }
 
         return
+    }
+
+    fun setCalendarSyncEvents(
+        calendarId: String,
+        syncEvents: Boolean,
+        pendingChannelResult: MethodChannel.Result
+    ) {
+        val numericCalendarId = calendarId.toLongOrNull()
+        if (numericCalendarId == null) {
+            finishWithError(
+                INVALID_ARGUMENT,
+                CALENDAR_ID_INVALID_ARGUMENT_NOT_A_NUMBER_MESSAGE,
+                pendingChannelResult
+            )
+            return
+        }
+        if (!arePermissionsGranted()) {
+            finishWithError(NOT_AUTHORIZED, NOT_AUTHORIZED_MESSAGE, pendingChannelResult)
+            return
+        }
+
+        runCalendarWork(
+            operation = "setCalendarSyncEvents",
+            pendingChannelResult = pendingChannelResult
+        ) {
+            val calendarBefore = retrieveCalendarBlocking(calendarId)
+            if (calendarBefore == null) {
+                finishWithError(
+                    NOT_FOUND,
+                    "Couldn't retrieve the Calendar with ID $calendarId",
+                    pendingChannelResult
+                )
+                return@runCalendarWork
+            }
+
+            val values = ContentValues().apply {
+                put(CalendarContract.Calendars.SYNC_EVENTS, if (syncEvents) 1 else 0)
+            }
+            val calendarUri = ContentUris.withAppendedId(
+                CalendarContract.Calendars.CONTENT_URI,
+                numericCalendarId
+            )
+            val updatedRows = _context.contentResolver.update(
+                calendarUri,
+                values,
+                null,
+                null
+            )
+            val calendarAfter = retrieveCalendarBlocking(calendarId)
+            val stateMatches = calendarAfter?.syncEvents == syncEvents
+
+            logDiagnostic("info", "Android calendar provider sync setting updated", mapOf(
+                "calendar_id" to calendarId,
+                "account_type" to (calendarBefore.accountType ?: "unknown"),
+                "previous_sync_events" to calendarBefore.syncEvents,
+                "requested_sync_events" to syncEvents,
+                "resulting_sync_events" to (calendarAfter?.syncEvents ?: calendarBefore.syncEvents),
+                "updated_rows" to updatedRows,
+                "state_matches" to stateMatches
+            ))
+
+            finishWithSuccess(stateMatches, pendingChannelResult)
+        }
     }
 
     fun createOrUpdateEvent(calendarId: String, event: Event?, pendingChannelResult: MethodChannel.Result) {
@@ -940,57 +1007,251 @@ class CalendarDelegate(
         calendarId: String,
         startDate: Long?,
         endDate: Long?,
+        eventsUri: Uri,
+        instanceCursorWasNull: Boolean,
         contentResolver: ContentResolver?
     ) {
         var rawEventsCursor: Cursor? = null
+        var unfilteredInstancesCursor: Cursor? = null
         try {
+            unfilteredInstancesCursor = contentResolver?.query(
+                eventsUri,
+                arrayOf(CalendarContract.Instances.EVENT_ID),
+                "${CalendarContract.Instances.CALENDAR_ID} = ?",
+                arrayOf(calendarId),
+                null
+            )
+            val instanceCountWithoutDeletedFilter =
+                unfilteredInstancesCursor?.count ?: 0
+
             rawEventsCursor = contentResolver?.query(
                 CalendarContract.Events.CONTENT_URI,
                 arrayOf(
                     CalendarContract.Events._ID,
                     CalendarContract.Events.DTSTART,
                     CalendarContract.Events.DTEND,
-                    CalendarContract.Events.RRULE
+                    CalendarContract.Events.DURATION,
+                    CalendarContract.Events.RRULE,
+                    CalendarContract.Events.RDATE,
+                    CalendarContract.Events.EXRULE,
+                    CalendarContract.Events.EXDATE,
+                    CalendarContract.Events.LAST_DATE,
+                    CalendarContract.Events.EVENT_TIMEZONE,
+                    CalendarContract.Events.EVENT_END_TIMEZONE,
+                    CalendarContract.Events.ALL_DAY,
+                    CalendarContract.Events.STATUS,
+                    CalendarContract.Events.DELETED,
+                    CalendarContract.Events.LAST_SYNCED,
+                    CalendarContract.Events.ORIGINAL_ID,
+                    CalendarContract.Events.ORIGINAL_SYNC_ID,
+                    CalendarContract.Events.ORIGINAL_INSTANCE_TIME
                 ),
-                "${CalendarContract.Events.CALENDAR_ID} = ? AND ${CalendarContract.Events.DELETED} != 1",
+                "${CalendarContract.Events.CALENDAR_ID} = ?",
                 arrayOf(calendarId),
                 null
             )
 
             var rawEventCount = 0
+            var rawActiveEventCount = 0
+            var rawDeletedEventCount = 0
             var rawRecurringEventCount = 0
             var rawNonRecurringEventsOverlappingWindow = 0
+            var rawExpansionCandidateCount = 0
+            var rawLastSyncedShadowCount = 0
+            var invalidRecurrenceCount = 0
+            val rawEventSamples = mutableListOf<Map<String, Any>>()
+            val queryStart = startDate ?: Long.MIN_VALUE
+            val queryEnd = endDate ?: Long.MAX_VALUE
+            val exceptionWindowStart = if (queryStart > Long.MIN_VALUE + DateUtils.WEEK_IN_MILLIS) {
+                queryStart - DateUtils.WEEK_IN_MILLIS
+            } else {
+                Long.MIN_VALUE
+            }
             val cursor = rawEventsCursor
             while (cursor?.moveToNext() == true) {
                 rawEventCount++
-                val eventStart = cursor.getLong(1)
-                val eventEnd = if (cursor.isNull(2)) eventStart else cursor.getLong(2)
-                val recurrenceRule = cursor.getString(3)
-                if (!recurrenceRule.isNullOrEmpty()) {
+                val eventId = cursor.getLong(0)
+                val eventStart = cursor.getLongOrNull(1)
+                val eventEnd = cursor.getLongOrNull(2)
+                val duration = cursor.getString(3)
+                val recurrenceRule = cursor.getString(4)
+                val recurrenceDate = cursor.getString(5)
+                val exceptionRule = cursor.getString(6)
+                val exceptionDate = cursor.getString(7)
+                val lastDate = cursor.getLongOrNull(8)
+                val eventTimezone = cursor.getString(9)
+                val eventEndTimezone = cursor.getString(10)
+                val allDay = cursor.getInt(11) != 0
+                val status = cursor.getLongOrNull(12)
+                val deleted = cursor.getInt(13) != 0
+                val lastSynced = cursor.getInt(14) != 0
+                val originalId = cursor.getLongOrNull(15)
+                val originalSyncId = cursor.getString(16)
+                val originalInstanceTime = cursor.getLongOrNull(17)
+
+                if (deleted) {
+                    rawDeletedEventCount++
+                    continue
+                }
+                rawActiveEventCount++
+                if (lastSynced) {
+                    rawLastSyncedShadowCount++
+                }
+
+                val isRecurring = !recurrenceRule.isNullOrEmpty() ||
+                    !recurrenceDate.isNullOrEmpty()
+                if (isRecurring) {
                     rawRecurringEventCount++
-                } else if ((endDate == null || eventStart <= endDate) &&
-                    (startDate == null || eventEnd >= startDate)) {
+                } else if (eventStart != null &&
+                    eventStart <= queryEnd &&
+                    (eventEnd ?: eventStart) >= queryStart) {
                     rawNonRecurringEventsOverlappingWindow++
+                }
+
+                val isExpansionCandidate = !lastSynced && (
+                    (eventStart != null &&
+                        eventStart <= queryEnd &&
+                        (lastDate == null || lastDate >= queryStart)) ||
+                        (originalInstanceTime != null &&
+                            originalInstanceTime <= queryEnd &&
+                            originalInstanceTime >= exceptionWindowStart)
+                    )
+                if (isExpansionCandidate) {
+                    rawExpansionCandidateCount++
+                }
+
+                var recurrenceParseError: String? = null
+                if (isExpansionCandidate && !recurrenceRule.isNullOrEmpty()) {
+                    try {
+                        org.dmfs.rfc5545.recur.RecurrenceRule(recurrenceRule)
+                    } catch (error: Exception) {
+                        invalidRecurrenceCount++
+                        recurrenceParseError = error.javaClass.simpleName
+                    }
+                }
+
+                if (rawEventSamples.size < 5 && isExpansionCandidate) {
+                    val sample = mutableMapOf<String, Any>(
+                        "event_id" to eventId.toString(),
+                        "all_day" to allDay,
+                        "deleted" to deleted,
+                        "last_synced" to lastSynced,
+                        "is_expansion_candidate" to true
+                    )
+                    eventStart?.let { sample["dtstart_ms"] = it }
+                    eventEnd?.let { sample["dtend_ms"] = it }
+                    duration?.let { sample["duration"] = it.take(256) }
+                    recurrenceRule?.let { sample["rrule"] = it.take(512) }
+                    recurrenceDate?.let { sample["rdate"] = it.take(512) }
+                    exceptionRule?.let { sample["exrule"] = it.take(512) }
+                    exceptionDate?.let { sample["exdate"] = it.take(512) }
+                    lastDate?.let { sample["last_date_ms"] = it }
+                    eventTimezone?.let { sample["event_timezone"] = it }
+                    eventEndTimezone?.let { sample["event_end_timezone"] = it }
+                    status?.let { sample["status"] = it }
+                    originalId?.let { sample["original_id"] = it.toString() }
+                    originalSyncId?.let {
+                        sample["has_original_sync_id"] = it.isNotEmpty()
+                    }
+                    originalInstanceTime?.let {
+                        sample["original_instance_time_ms"] = it
+                    }
+                    recurrenceParseError?.let {
+                        sample["recurrence_parse_error"] = it
+                    }
+                    rawEventSamples.add(sample)
                 }
             }
 
-            logDiagnostic("info", "Zero-instance Android calendar provider probe", mapOf(
+            var masterSyncAutomatically: Boolean? = null
+            var accountSyncAutomatically: Boolean? = null
+            var accountIsSyncable: Int? = null
+            var accountSyncActive: Boolean? = null
+            var accountSyncPending: Boolean? = null
+            var accountSyncStateError: String? = null
+            try {
+                masterSyncAutomatically = ContentResolver.getMasterSyncAutomatically()
+                val accountName = calendar.accountName
+                val accountType = calendar.accountType
+                if (!accountName.isNullOrEmpty() && !accountType.isNullOrEmpty()) {
+                    val account = Account(accountName, accountType)
+                    accountSyncAutomatically = ContentResolver.getSyncAutomatically(
+                        account,
+                        CalendarContract.AUTHORITY
+                    )
+                    accountIsSyncable = ContentResolver.getIsSyncable(
+                        account,
+                        CalendarContract.AUTHORITY
+                    )
+                    accountSyncActive = ContentResolver.isSyncActive(
+                        account,
+                        CalendarContract.AUTHORITY
+                    )
+                    accountSyncPending = ContentResolver.isSyncPending(
+                        account,
+                        CalendarContract.AUTHORITY
+                    )
+                }
+            } catch (error: Exception) {
+                accountSyncStateError = error.javaClass.simpleName + ": " +
+                    (error.message ?: "unknown error")
+            }
+
+            val classification = AndroidCalendarProviderProbeClassifier.classify(
+                syncEvents = calendar.syncEvents,
+                accountSyncAutomatically = accountSyncAutomatically,
+                rawEventCount = rawEventCount,
+                rawActiveEventCount = rawActiveEventCount,
+                rawExpansionCandidateCount = rawExpansionCandidateCount,
+                instanceCountWithoutDeletedFilter = instanceCountWithoutDeletedFilter,
+                invalidRecurrenceCount = invalidRecurrenceCount
+            )
+
+            val probeData = mutableMapOf<String, Any>(
                 "calendar_id" to calendarId,
-                "account_type" to calendar.accountType,
+                "account_type" to (calendar.accountType ?: "unknown"),
                 "is_visible" to calendar.isVisible,
                 "sync_events" to calendar.syncEvents,
+                "instance_cursor_was_null" to instanceCursorWasNull,
+                "instance_count_without_deleted_filter" to instanceCountWithoutDeletedFilter,
                 "query_start_ms" to (startDate ?: 0L),
                 "query_end_ms" to (endDate ?: 0L),
                 "raw_event_count" to rawEventCount,
+                "raw_active_event_count" to rawActiveEventCount,
+                "raw_deleted_event_count" to rawDeletedEventCount,
                 "raw_recurring_event_count" to rawRecurringEventCount,
-                "raw_non_recurring_events_overlapping_window" to rawNonRecurringEventsOverlappingWindow
-            ))
+                "raw_non_recurring_events_overlapping_window" to rawNonRecurringEventsOverlappingWindow,
+                "raw_expansion_candidate_count" to rawExpansionCandidateCount,
+                "raw_last_synced_shadow_count" to rawLastSyncedShadowCount,
+                "invalid_recurrence_count" to invalidRecurrenceCount,
+                "classification" to classification,
+                "raw_event_samples" to rawEventSamples
+            )
+            masterSyncAutomatically?.let {
+                probeData["master_sync_automatically"] = it
+            }
+            accountSyncAutomatically?.let {
+                probeData["account_sync_automatically"] = it
+            }
+            accountIsSyncable?.let { probeData["account_is_syncable"] = it }
+            accountSyncActive?.let { probeData["account_sync_active"] = it }
+            accountSyncPending?.let { probeData["account_sync_pending"] = it }
+            accountSyncStateError?.let {
+                probeData["account_sync_state_error"] = it
+            }
+
+            logDiagnostic(
+                "info",
+                "Zero-instance Android calendar provider probe",
+                probeData
+            )
         } catch (e: Exception) {
             logDiagnostic("warning", "Android calendar provider probe failed", mapOf(
                 "calendar_id" to calendarId,
                 "error" to (e.message ?: "unknown error")
             ))
         } finally {
+            unfilteredInstancesCursor?.close()
             rawEventsCursor?.close()
         }
     }

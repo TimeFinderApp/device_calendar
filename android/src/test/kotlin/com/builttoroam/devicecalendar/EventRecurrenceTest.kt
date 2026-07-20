@@ -1,6 +1,7 @@
 package com.builttoroam.devicecalendar
 
 import com.builttoroam.devicecalendar.common.AndroidDayOfWeekCodec
+import com.builttoroam.devicecalendar.common.AndroidCalendarProviderProbeClassifier
 import com.builttoroam.devicecalendar.common.AndroidRecurringIdentityNormalizer
 import com.builttoroam.devicecalendar.common.DayOfWeek
 import org.dmfs.rfc5545.Weekday
@@ -11,6 +12,70 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class EventRecurrenceTest {
+    @Test
+    fun `disabled calendar sync explains an empty provider calendar`() {
+        assertEquals(
+            "calendar_sync_disabled",
+            AndroidCalendarProviderProbeClassifier.classify(
+                syncEvents = false,
+                accountSyncAutomatically = true,
+                rawEventCount = 0,
+                rawActiveEventCount = 0,
+                rawExpansionCandidateCount = 0,
+                instanceCountWithoutDeletedFilter = 0,
+                invalidRecurrenceCount = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `eligible raw events identify provider expansion failure`() {
+        assertEquals(
+            "provider_instance_expansion_failed",
+            AndroidCalendarProviderProbeClassifier.classify(
+                syncEvents = true,
+                accountSyncAutomatically = true,
+                rawEventCount = 4,
+                rawActiveEventCount = 4,
+                rawExpansionCandidateCount = 3,
+                instanceCountWithoutDeletedFilter = 0,
+                invalidRecurrenceCount = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `instances excluded by plugin predicate identify query mismatch`() {
+        assertEquals(
+            "plugin_deleted_filter_mismatch",
+            AndroidCalendarProviderProbeClassifier.classify(
+                syncEvents = true,
+                accountSyncAutomatically = true,
+                rawEventCount = 1,
+                rawActiveEventCount = 1,
+                rawExpansionCandidateCount = 1,
+                instanceCountWithoutDeletedFilter = 1,
+                invalidRecurrenceCount = 0,
+            ),
+        )
+    }
+
+    @Test
+    fun `missing provider rows are distinct from disabled sync`() {
+        assertEquals(
+            "calendar_provider_not_materialized",
+            AndroidCalendarProviderProbeClassifier.classify(
+                syncEvents = true,
+                accountSyncAutomatically = true,
+                rawEventCount = 0,
+                rawActiveEventCount = 0,
+                rawExpansionCandidateCount = 0,
+                instanceCountWithoutDeletedFilter = 0,
+                invalidRecurrenceCount = 0,
+            ),
+        )
+    }
+
     @Test
     fun `calendar contract Monday round trips as Monday`() {
         val dayOfWeek = AndroidDayOfWeekCodec.fromCalendarContractValue(2)
