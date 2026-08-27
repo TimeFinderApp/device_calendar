@@ -554,8 +554,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 let endDate = Date(timeIntervalSince1970: endDateMillisecondsSinceEpoch!.doubleValue / 1000.0)
 
                 if let ekCalendar = self.eventStore.calendar(withIdentifier: calendarId) {
-                    let predicate = self.eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: [ekCalendar])
-                    let ekEvents = self.eventStore.events(matching: predicate)
+                    let ekEvents = self.events(in: ekCalendar, from: startDate, to: endDate)
                     for ekEvent in ekEvents {
                         if let event = self.createEventFromEkEvent(calendarId: calendarId, ekEvent: ekEvent) {
                             events.append(event)
@@ -587,6 +586,36 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
 
             self.encodeJsonAndFinish(codable: events, result: result)
         }, result: result, operationName: "retrieveEvents")
+    }
+
+    private func events(in calendar: EKCalendar, from startDate: Date, to endDate: Date) -> [EKEvent] {
+        let maximumRange = TimeInterval(4 * 365 * 24 * 60 * 60)
+        var events = [EKEvent]()
+        var rangeStart = startDate
+        var rangeEnd = startDate.addingTimeInterval(maximumRange)
+
+        // EventKit silently limits a single query to roughly four years.
+        while rangeEnd <= endDate {
+            let predicate = eventStore.predicateForEvents(
+                withStart: rangeStart,
+                end: rangeEnd.addingTimeInterval(-1),
+                calendars: [calendar]
+            )
+            events.append(contentsOf: eventStore.events(matching: predicate))
+            rangeStart = rangeEnd
+            rangeEnd = rangeStart.addingTimeInterval(maximumRange)
+        }
+
+        if rangeStart <= endDate {
+            let predicate = eventStore.predicateForEvents(
+                withStart: rangeStart,
+                end: endDate,
+                calendars: [calendar]
+            )
+            events.append(contentsOf: eventStore.events(matching: predicate))
+        }
+
+        return events
     }
 
     private func createEventFromEkEvent(calendarId: String, ekEvent: EKEvent) -> Event? {
