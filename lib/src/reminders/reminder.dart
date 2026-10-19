@@ -10,6 +10,7 @@ class Reminder {
   bool isCompleted;
   String? notes;
   DateTime? lastModifiedDate;
+  String? nativeLifetime;
 
   Reminder({
     required this.list,
@@ -21,6 +22,7 @@ class Reminder {
     this.isCompleted = false,
     this.notes,
     this.lastModifiedDate,
+    this.nativeLifetime,
   }) : hasTime = hasTime ?? _inferHasTime(dueDate);
 
   Reminder.fromJson(Map<String, dynamic> json)
@@ -31,7 +33,8 @@ class Reminder {
             json['hasTime'] as bool? ?? _jsonDueDateHasTime(json['dueDate']),
         priority = json['priority'],
         isCompleted = json['isCompleted'],
-        notes = json['notes'] {
+        notes = json['notes'],
+        nativeLifetime = json['nativeLifetime'] as String? {
     if (json['dueDate'] != null) {
       final date = json['dueDate'];
       dueDate = DateTime(date['year']!, date['month']!, date['day']!,
@@ -76,6 +79,7 @@ class Reminder {
         'isCompleted': isCompleted,
         'notes': notes,
         'lastModifiedDate': lastModifiedDate?.toIso8601String(),
+        'nativeLifetime': nativeLifetime,
       };
 
   @override

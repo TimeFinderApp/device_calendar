@@ -139,6 +139,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         let isCompleted: Bool
         let notes: String?
         let lastModifiedDate: Date?
+        let nativeLifetime: String?
 
         init(reminder: EKReminder) {
             self.list = List(list: reminder.calendar)
@@ -150,6 +151,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             self.isCompleted = reminder.isCompleted
             self.notes = reminder.notes
             self.lastModifiedDate = reminder.lastModifiedDate
+            self.nativeLifetime = DeviceCalendarPlugin.reminderLifetime(reminder)
         }
 
         func toJson() -> String? {
@@ -333,7 +335,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             }
         case "beginReminderMutations", "endReminderMutations", "registerReminderMutation",
              "acceptReminderMutation", "finishReminderMutation", "updateReminderFields",
-             "createReminderForTask", "deleteReminderForTask":
+             "createReminderForTask", "deleteReminderForTask", "getReminderStoreIdentity":
             handleReminderMutation(call, result)
         case saveReminderMethod:
             if let args = call.arguments as? [String: Any] {

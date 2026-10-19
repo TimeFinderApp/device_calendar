@@ -12,6 +12,12 @@ class ReminderMutationSession {
     );
   }
 
+  static Future<String> storeIdentity() async =>
+      await RemindersPlatform.instance.invokeReminderMutation(
+        'getReminderStoreIdentity',
+        const {},
+      ) as String;
+
   final String generation;
   final RemindersPlatform _platform;
   late final Future<Object?> _ready;
@@ -83,6 +89,7 @@ class ReminderMutationAttempt {
     required String reminderId,
     required String listId,
     required Map<String, Object?> values,
+    String? lifetime,
   }) async {
     // Freeze nested date components before any method-channel suspension.
     final ownedValues = jsonDecode(jsonEncode(values)) as Map<String, dynamic>;
@@ -90,6 +97,7 @@ class ReminderMutationAttempt {
           'id': reminderId,
           'list': listId,
           'values': ownedValues,
+          if (lifetime != null) 'lifetime': lifetime,
         }) ==
         true;
   }
@@ -97,10 +105,12 @@ class ReminderMutationAttempt {
   Future<bool> delete({
     required String reminderId,
     required String listId,
+    String? lifetime,
   }) async =>
       await _invoke('deleteReminderForTask', {
         'id': reminderId,
         'list': listId,
+        if (lifetime != null) 'lifetime': lifetime,
       }) ==
       true;
 
@@ -110,6 +120,7 @@ class ReminderMutationAttempt {
     required Map<String, Object?> baseline,
     Map<String, Object?> adoptValues = const {},
     String? existingId,
+    String? lifetime,
   }) async {
     final frozen = jsonDecode(jsonEncode(baseline)) as Map<String, dynamic>;
     return await _invoke('createReminderForTask', {
@@ -118,6 +129,7 @@ class ReminderMutationAttempt {
       'values': frozen,
       'adoptValues': jsonDecode(jsonEncode(adoptValues)),
       if (existingId != null) 'existingId': existingId,
+      if (lifetime != null) 'lifetime': lifetime,
     }) as String?;
   }
 

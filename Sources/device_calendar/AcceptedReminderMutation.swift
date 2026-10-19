@@ -8,7 +8,19 @@ import Flutter
 #endif
 
 extension DeviceCalendarPlugin {
+    static func reminderLifetime(_ reminder: EKReminder) -> String? {
+        reminder.creationDate.map { String($0.timeIntervalSinceReferenceDate.bitPattern, radix: 16) }
+    }
+
     func handleReminderMutation(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+        if call.method == "getReminderStoreIdentity" {
+            eventKitQueue.async { [self] in
+                eventStore.refreshSourcesIfNecessary()
+                let identity = eventStore.eventStoreIdentifier
+                DispatchQueue.main.async { result(identity) }
+            }
+            return
+        }
         guard let arguments = call.arguments as? [String: Any],
               let generation = arguments["generation"] as? String else {
             result(FlutterError(
@@ -86,6 +98,8 @@ extension DeviceCalendarPlugin {
         eventStore.refreshSourcesIfNecessary()
         guard let reminder = eventStore.calendarItem(withIdentifier: reminderId) as? EKReminder else { return true }
         guard reminder.calendar.calendarIdentifier == list else { throw ReminderMutationError.retired }
+        if let lifetime = arguments["lifetime"] as? String,
+           Self.reminderLifetime(reminder) != lifetime { throw ReminderMutationError.retired }
         try eventStore.remove(reminder, commit: true)
         return true
     }
@@ -132,6 +146,8 @@ extension DeviceCalendarPlugin {
             ) as? EKReminder, existing.calendar.calendarIdentifier == creation.list else {
                 throw ReminderMutationError.retired
             }
+            if creation.existingId != nil, let lifetime = creation.lifetime,
+               Self.reminderLifetime(existing) != lifetime { throw ReminderMutationError.retired }
             reminder = existing
             // A recovered identity retains external fields; only a fresh
             // accepted field grant can update it after creation.
@@ -170,6 +186,8 @@ extension DeviceCalendarPlugin {
         eventStore.refreshSourcesIfNecessary()
         guard let reminder = eventStore.calendarItem(withIdentifier: id) as? EKReminder,
               reminder.calendar.calendarIdentifier == list else { throw ReminderMutationError.retired }
+        if let lifetime = arguments["lifetime"] as? String,
+           Self.reminderLifetime(reminder) != lifetime { throw ReminderMutationError.retired }
         applyReminderFields(parsed, to: reminder, fields: owned)
         try eventStore.save(reminder, commit: true)
         return true
@@ -183,6 +201,7 @@ private struct AcceptedReminderCreation {
     let adoption: AcceptedReminderFields
     let adoptedFields: Set<String>
     let existingId: String?
+    let lifetime: String?
 
     init(_ arguments: [String: Any]) throws {
         guard let list = arguments["list"] as? String,
@@ -195,6 +214,7 @@ private struct AcceptedReminderCreation {
             throw ReminderMutationError.invalid
         }
         existingId = arguments["existingId"] as? String
+        lifetime = arguments["lifetime"] as? String
         self.list = list
         self.url = url
         baseline = try AcceptedReminderFields(values)

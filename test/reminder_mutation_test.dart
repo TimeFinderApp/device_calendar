@@ -14,12 +14,19 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
+      if (call.method == 'getReminderStoreIdentity') return 'observed-store';
       return call.method == 'updateReminderFields' ? true : null;
     });
   });
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+  });
+
+  test('native store identity is read without granting a mutation', () async {
+    expect(await ReminderMutationSession.storeIdentity(), 'observed-store');
+    expect(calls.single.method, 'getReminderStoreIdentity');
+    expect(calls.single.arguments, isEmpty);
   });
 
   test('registration owns its mask before session preparation completes',
@@ -68,6 +75,7 @@ void main() {
       reminderId: 'native-id',
       listId: 'native-list',
       values: {'dueDate': date},
+      lifetime: 'observed-native-life',
     );
     date['day'] = 20;
     expect(await update, isTrue);
@@ -75,6 +83,7 @@ void main() {
     expect(applied['id'], 'native-id');
     expect(applied['list'], 'native-list');
     expect(applied['attempt'], 'source-a');
+    expect(applied['lifetime'], 'observed-native-life');
     expect(((applied['values'] as Map)['dueDate'] as Map)['day'], 19);
     await attempt.finish();
     await attempt.finish();
@@ -150,10 +159,12 @@ void main() {
         marker: 'marker',
         baseline: {'title': 'Server title'},
         adoptValues: fields,
-        existingId: 'retained-native-id');
+        existingId: 'retained-native-id',
+        lifetime: 'observed-native-life');
     fields['notes'] = 'Unowned note';
     await pending;
     expect((calls.last.arguments as Map)['existingId'], 'retained-native-id');
+    expect((calls.last.arguments as Map)['lifetime'], 'observed-native-life');
     expect((calls.last.arguments as Map)['adoptValues'],
         {'title': 'New accepted title'});
     await attempt.finish();
@@ -165,11 +176,15 @@ void main() {
     final attempt = await session.register(
         attempt: 'delete', entity: 'task', revision: 1, fields: {r'$delete'});
     await attempt.accept();
-    await attempt.delete(reminderId: 'native-id', listId: 'native-list');
+    await attempt.delete(
+        reminderId: 'native-id',
+        listId: 'native-list',
+        lifetime: 'observed-native-life');
     final call = calls.last;
     expect(call.method, 'deleteReminderForTask');
     expect((call.arguments as Map)['id'], 'native-id');
     expect((call.arguments as Map)['list'], 'native-list');
+    expect((call.arguments as Map)['lifetime'], 'observed-native-life');
     await attempt.finish();
     await session.end();
   });
