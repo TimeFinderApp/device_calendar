@@ -18,6 +18,10 @@ extension DeviceCalendarPlugin {
         }
         eventKitQueue.async { [self] in
             do {
+                if call.method == "createReminderForTask" {
+                    try createAcceptedReminder(arguments, generation: generation, result: result)
+                    return
+                }
                 let response = try performReminderMutation(call.method, arguments, generation: generation)
                 let reply = response
                 DispatchQueue.main.async { result(reply) }
@@ -58,7 +62,9 @@ extension DeviceCalendarPlugin {
                 generation: generation, id: id, entity: entity, revision: revision, fields: Set(fields)
             )
         case "acceptReminderMutation":
-            try reminderMutationAuthority.accept(generation: generation, id: id)
+            try reminderMutationAuthority.accept(
+                generation: generation, id: id, fields: (arguments["fields"] as? [String]).map(Set.init)
+            )
         case "finishReminderMutation":
             reminderMutationAuthority.finish(generation: generation, id: id)
         case "updateReminderFields":
@@ -67,6 +73,63 @@ extension DeviceCalendarPlugin {
             throw ReminderMutationError.invalid
         }
         return nil
+    }
+
+    private func createAcceptedReminder(
+        _ arguments: [String: Any], generation: String, result: @escaping FlutterResult
+    ) throws {
+        guard let attempt = arguments["attempt"] as? String,
+              let listId = arguments["list"] as? String,
+              let marker = arguments["marker"] as? String,
+              marker.hasPrefix("timefinder://reminder/"),
+              marker.count == "timefinder://reminder/".count + 64,
+              let url = URL(string: marker),
+              let values = arguments["values"] as? [String: Any],
+              Set(values.keys) == Set(["title", "notes", "isCompleted", "dueDate"]) else {
+            throw ReminderMutationError.invalid
+        }
+        let parsed = try AcceptedReminderFields(values)
+        eventStore.refreshSourcesIfNecessary()
+        eventStore.fetchReminders(matching: eventStore.predicateForReminders(in: nil)) { [self] reminders in
+            eventKitQueue.async { [self] in
+                do {
+                    eventStore.refreshSourcesIfNecessary()
+                    guard let reminders, let calendar = eventStore.calendar(withIdentifier: listId) else {
+                        throw ReminderMutationError.retired
+                    }
+                    try reminderMutationAuthority.consumeCreation(generation: generation, id: attempt)
+                    let matches = reminders.filter { $0.url == url }
+                    guard matches.count <= 1 else { throw ReminderMutationError.invalid }
+                    let reminder: EKReminder
+                    if let match = matches.first {
+                        guard let existing = eventStore.calendarItem(
+                            withIdentifier: match.calendarItemIdentifier
+                        ) as? EKReminder, existing.calendar.calendarIdentifier == listId else {
+                            throw ReminderMutationError.retired
+                        }
+                        // A lost create response never authorizes overwriting
+                        // independent edits made to that already-created item.
+                        reminder = existing
+                    } else {
+                        reminder = EKReminder(eventStore: eventStore)
+                        reminder.calendar = calendar
+                        reminder.title = parsed.title!
+                        reminder.notes = parsed.notes
+                        reminder.isCompleted = parsed.completed!
+                        reminder.dueDateComponents = parsed.due
+                        reminder.url = url
+                        try eventStore.save(reminder, commit: true)
+                    }
+                    let id = reminder.calendarItemIdentifier
+                    DispatchQueue.main.async { result(id) }
+                } catch {
+                    let code = (error as? ReminderMutationError)?.rawValue ?? "SAVE_ERROR"
+                    DispatchQueue.main.async {
+                        result(FlutterError(code: code, message: "Reminder creation refused", details: nil))
+                    }
+                }
+            }
+        }
     }
 
     private func updateAcceptedReminder(

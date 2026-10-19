@@ -61,7 +61,7 @@ abstract class RemindersPlatform extends PlatformInterface {
     throw UnimplementedError('saveReminder(Reminder) has not been implemented');
   }
 
-  Future<bool?> invokeReminderMutation(
+  Future<Object?> invokeReminderMutation(
     String operation,
     Map<String, Object?> arguments,
   ) {

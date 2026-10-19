@@ -84,10 +84,10 @@ class MethodChannelReminders extends RemindersPlatform {
   }
 
   @override
-  Future<bool?> invokeReminderMutation(
+  Future<Object?> invokeReminderMutation(
     String operation,
     Map<String, Object?> arguments,
   ) {
-    return methodChannel.invokeMethod<bool>(operation, arguments);
+    return methodChannel.invokeMethod<Object?>(operation, arguments);
   }
 }

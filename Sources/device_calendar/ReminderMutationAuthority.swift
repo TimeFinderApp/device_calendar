@@ -12,7 +12,7 @@ final class ReminderMutationAuthority {
     private struct Attempt {
         let entity: String
         let revision: Int
-        let fields: Set<String>
+        var fields: Set<String>
         var accepted = false
         var consumed = false
     }
@@ -20,7 +20,7 @@ final class ReminderMutationAuthority {
     private(set) var generation: String?
     private var attempts: [String: Attempt] = [:]
     private var fences: [String: [String: Int]] = [:]
-    private let supportedFields: Set<String> = ["title", "notes", "dueDate", "isCompleted"]
+    private let supportedFields: Set<String> = ["title", "notes", "dueDate", "isCompleted", "$create"]
 
     func begin(_ value: String) throws {
         guard !value.isEmpty else { throw ReminderMutationError.invalid }
@@ -48,9 +48,14 @@ final class ReminderMutationAuthority {
         attempts[id] = Attempt(entity: entity, revision: revision, fields: fields)
     }
 
-    func accept(generation: String, id: String) throws {
+    func accept(generation: String, id: String, fields: Set<String>? = nil) throws {
         try requireGeneration(generation)
         guard var attempt = attempts[id], !attempt.consumed else { throw ReminderMutationError.retired }
+        if let fields {
+            guard !fields.isEmpty, fields.isSubset(of: attempt.fields),
+                  !attempt.accepted || fields == attempt.fields else { throw ReminderMutationError.invalid }
+            attempt.fields = fields
+        }
         attempt.accepted = true
         attempts[id] = attempt
         for field in attempt.fields {
@@ -65,10 +70,21 @@ final class ReminderMutationAuthority {
         guard var attempt = attempts[id], attempt.accepted, !attempt.consumed else {
             throw ReminderMutationError.retired
         }
-        guard fields == attempt.fields else { throw ReminderMutationError.invalid }
+        guard fields == attempt.fields.subtracting(["$create"]) else { throw ReminderMutationError.invalid }
         attempt.consumed = true
         attempts[id] = attempt
-        return attempt.fields.filter { fences[attempt.entity]?[$0] == attempt.revision }
+        return fields.filter { fences[attempt.entity]?[$0] == attempt.revision }
+    }
+
+    func consumeCreation(generation: String, id: String) throws {
+        try requireGeneration(generation)
+        guard var attempt = attempts[id], attempt.accepted, !attempt.consumed,
+              attempt.fields.contains("$create"),
+              fences[attempt.entity]?["$create"] == attempt.revision else {
+            throw ReminderMutationError.retired
+        }
+        attempt.consumed = true
+        attempts[id] = attempt
     }
 
     func finish(generation: String, id: String) {

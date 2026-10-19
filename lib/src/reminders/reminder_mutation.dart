@@ -14,7 +14,7 @@ class ReminderMutationSession {
 
   final String generation;
   final RemindersPlatform _platform;
-  late final Future<bool?> _ready;
+  late final Future<Object?> _ready;
   bool _ended = false;
 
   Future<ReminderMutationAttempt> register({
@@ -58,7 +58,7 @@ class ReminderMutationAttempt {
   final Set<String> fields;
   bool _finished = false;
 
-  Future<bool?> _invoke(String operation,
+  Future<Object?> _invoke(String operation,
       [Map<String, Object?> extra = const {}]) {
     _session._requireActive();
     if (_finished) throw StateError('Reminder attempt has finished.');
@@ -69,8 +69,14 @@ class ReminderMutationAttempt {
     });
   }
 
-  Future<void> accept() async {
-    await _invoke('acceptReminderMutation');
+  Future<void> accept({Set<String>? fields}) async {
+    final mask = fields == null ? null : Set<String>.unmodifiable(fields);
+    if (mask != null && (mask.isEmpty || !this.fields.containsAll(mask))) {
+      throw StateError('Accepted fields exceed the reserved native intent.');
+    }
+    await _invoke('acceptReminderMutation', {
+      if (mask != null) 'fields': mask.toList(),
+    });
   }
 
   Future<bool> update({
@@ -84,8 +90,21 @@ class ReminderMutationAttempt {
           'id': reminderId,
           'list': listId,
           'values': ownedValues,
-        }) ??
-        false;
+        }) ==
+        true;
+  }
+
+  Future<String?> create({
+    required String listId,
+    required String marker,
+    required Map<String, Object?> baseline,
+  }) async {
+    final frozen = jsonDecode(jsonEncode(baseline)) as Map<String, dynamic>;
+    return await _invoke('createReminderForTask', {
+      'list': listId,
+      'marker': marker,
+      'values': frozen,
+    }) as String?;
   }
 
   Future<void> finish() async {
