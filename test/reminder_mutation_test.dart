@@ -23,6 +23,21 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  test('native creation ownership observation grants no mutation', () {
+    final row = {
+      'list': {'id': 'list', 'title': 'List', 'color': null},
+      'id': 'native',
+      'title': 'Title',
+      'priority': 0,
+      'isCompleted': false,
+    };
+    expect(Reminder.fromJson(row).hasTaskCreationMarker, isFalse);
+    final observed = Reminder.fromJson({...row, 'hasTaskCreationMarker': true});
+    expect(observed.hasTaskCreationMarker, isTrue);
+    expect(observed.toJson()['hasTaskCreationMarker'], isTrue);
+    expect(calls, isEmpty);
+  });
+
   test('native store identity is read without granting a mutation', () async {
     expect(await ReminderMutationSession.storeIdentity(), 'observed-store');
     expect(calls.single.method, 'getReminderStoreIdentity');

@@ -140,6 +140,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
         let notes: String?
         let lastModifiedDate: Date?
         let nativeLifetime: String?
+        let hasTaskCreationMarker: Bool
 
         init(reminder: EKReminder) {
             self.list = List(list: reminder.calendar)
@@ -152,6 +153,9 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             self.notes = reminder.notes
             self.lastModifiedDate = reminder.lastModifiedDate
             self.nativeLifetime = DeviceCalendarPlugin.reminderLifetime(reminder)
+            let marker = reminder.url?.absoluteString ?? ""
+            self.hasTaskCreationMarker = marker.hasPrefix("timefinder://reminder/")
+                && marker.count == "timefinder://reminder/".count + 64
         }
 
         func toJson() -> String? {
