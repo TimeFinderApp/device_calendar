@@ -198,6 +198,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     let calendarReadOnlyErrorMessageFormat = "Calendar with ID %@ is read-only"
     let eventNotFoundErrorMessageFormat = "The event with the ID %@ could not be found"
     let eventStore = SharedEventStore.shared
+    let reminderMutationAuthority = ReminderMutationAuthority()
     let eventKitQueue = DispatchQueue(
         label: "com.builttoroam.device_calendar.eventkit",
         qos: .userInitiated
@@ -330,6 +331,9 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                     getReminders(id, result)
                 }
             }
+        case "beginReminderMutations", "endReminderMutations", "registerReminderMutation",
+             "acceptReminderMutation", "finishReminderMutation", "updateReminderFields":
+            handleReminderMutation(call, result)
         case saveReminderMethod:
             if let args = call.arguments as? [String: Any] {
                 if let reminder = args["reminder"] as? [String: Any] {
@@ -1582,7 +1586,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func saveReminder(_ json: [String: Any], _ result: @escaping FlutterResult) {
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
+        eventKitQueue.async { [self] in
             let reminder: EKReminder
 
             guard let calendarID = json["list"] as? String,
@@ -1639,7 +1643,7 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     }
 
     private func deleteReminder(_ id: String, _ result: @escaping FlutterResult) {
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
+        eventKitQueue.async { [self] in
             guard let reminder = eventStore.calendarItem(withIdentifier: id) as? EKReminder else {
                 DispatchQueue.main.async {
                     result(FlutterError(code: "NOT_FOUND", message: "Cannot find reminder with ID: \(id)", details: nil))

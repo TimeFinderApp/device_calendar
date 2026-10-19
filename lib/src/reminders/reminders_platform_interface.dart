@@ -61,6 +61,13 @@ abstract class RemindersPlatform extends PlatformInterface {
     throw UnimplementedError('saveReminder(Reminder) has not been implemented');
   }
 
+  Future<bool?> invokeReminderMutation(
+    String operation,
+    Map<String, Object?> arguments,
+  ) {
+    throw UnimplementedError('Accepted Reminder mutations are unavailable.');
+  }
+
   Future<String?> deleteReminder(String? id) async {
     throw UnimplementedError('deleteReminder(String) has not been implemented');
   }
