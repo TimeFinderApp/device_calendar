@@ -136,6 +136,44 @@ void main() {
     await session.end();
   });
 
+  test('identity adoption freezes only the newly accepted fields', () async {
+    final session = ReminderMutationSession('account-adopt');
+    final attempt = await session.register(
+        attempt: 'adopt',
+        entity: 'task',
+        revision: 1,
+        fields: {'title', r'$create'});
+    await attempt.accept();
+    final fields = <String, Object?>{'title': 'New accepted title'};
+    final pending = attempt.create(
+        listId: 'list',
+        marker: 'marker',
+        baseline: {'title': 'Server title'},
+        adoptValues: fields,
+        existingId: 'retained-native-id');
+    fields['notes'] = 'Unowned note';
+    await pending;
+    expect((calls.last.arguments as Map)['existingId'], 'retained-native-id');
+    expect((calls.last.arguments as Map)['adoptValues'],
+        {'title': 'New accepted title'});
+    await attempt.finish();
+    await session.end();
+  });
+
+  test('explicit deletion retains exact accepted native identity', () async {
+    final session = ReminderMutationSession('account-delete');
+    final attempt = await session.register(
+        attempt: 'delete', entity: 'task', revision: 1, fields: {r'$delete'});
+    await attempt.accept();
+    await attempt.delete(reminderId: 'native-id', listId: 'native-list');
+    final call = calls.last;
+    expect(call.method, 'deleteReminderForTask');
+    expect((call.arguments as Map)['id'], 'native-id');
+    expect((call.arguments as Map)['list'], 'native-list');
+    await attempt.finish();
+    await session.end();
+  });
+
   test('an ended account refuses queued registration and existing attempt use',
       () async {
     final session = ReminderMutationSession('account-a');

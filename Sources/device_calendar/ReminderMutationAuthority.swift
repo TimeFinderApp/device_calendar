@@ -20,7 +20,7 @@ final class ReminderMutationAuthority {
     private(set) var generation: String?
     private var attempts: [String: Attempt] = [:]
     private var fences: [String: [String: Int]] = [:]
-    private let supportedFields: Set<String> = ["title", "notes", "dueDate", "isCompleted", "$create"]
+    private let supportedFields: Set<String> = ["title", "notes", "dueDate", "isCompleted", "$create", "$delete"]
 
     func begin(_ value: String) throws {
         guard !value.isEmpty else { throw ReminderMutationError.invalid }
@@ -70,21 +70,36 @@ final class ReminderMutationAuthority {
         guard var attempt = attempts[id], attempt.accepted, !attempt.consumed else {
             throw ReminderMutationError.retired
         }
-        guard fields == attempt.fields.subtracting(["$create"]) else { throw ReminderMutationError.invalid }
+        guard fields.isSubset(of: attempt.fields.subtracting(["$create", "$delete"])) else {
+            throw ReminderMutationError.invalid
+        }
         attempt.consumed = true
         attempts[id] = attempt
         return fields.filter { fences[attempt.entity]?[$0] == attempt.revision }
     }
 
-    func consumeCreation(generation: String, id: String) throws {
+    func consumeCreation(generation: String, id: String, fields: Set<String>) throws -> Set<String> {
         try requireGeneration(generation)
         guard var attempt = attempts[id], attempt.accepted, !attempt.consumed,
               attempt.fields.contains("$create"),
               fences[attempt.entity]?["$create"] == attempt.revision else {
             throw ReminderMutationError.retired
         }
+        guard fields.isSubset(of: attempt.fields.subtracting(["$create", "$delete"])) else {
+            throw ReminderMutationError.invalid
+        }
         attempt.consumed = true
         attempts[id] = attempt
+        return fields.filter { fences[attempt.entity]?[$0] == attempt.revision }
+    }
+
+    func consumeDeletion(generation: String, id: String) throws -> Bool {
+        try requireGeneration(generation)
+        guard var attempt = attempts[id], attempt.accepted, !attempt.consumed,
+              attempt.fields.contains("$delete") else { throw ReminderMutationError.retired }
+        attempt.consumed = true
+        attempts[id] = attempt
+        return fences[attempt.entity]?["$delete"] == attempt.revision
     }
 
     func finish(generation: String, id: String) {

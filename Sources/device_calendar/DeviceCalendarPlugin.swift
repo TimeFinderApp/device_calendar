@@ -332,7 +332,8 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
                 }
             }
         case "beginReminderMutations", "endReminderMutations", "registerReminderMutation",
-             "acceptReminderMutation", "finishReminderMutation", "updateReminderFields", "createReminderForTask":
+             "acceptReminderMutation", "finishReminderMutation", "updateReminderFields",
+             "createReminderForTask", "deleteReminderForTask":
             handleReminderMutation(call, result)
         case saveReminderMethod:
             if let args = call.arguments as? [String: Any] {

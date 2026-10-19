@@ -69,58 +69,42 @@ extension DeviceCalendarPlugin {
             reminderMutationAuthority.finish(generation: generation, id: id)
         case "updateReminderFields":
             return try updateAcceptedReminder(arguments, generation: generation, attempt: id)
+        case "deleteReminderForTask":
+            return try deleteAcceptedReminder(arguments, generation: generation, attempt: id)
         default:
             throw ReminderMutationError.invalid
         }
         return nil
     }
 
+    private func deleteAcceptedReminder(
+        _ arguments: [String: Any], generation: String, attempt: String
+    ) throws -> Bool {
+        guard let reminderId = arguments["id"] as? String, !reminderId.isEmpty,
+              let list = arguments["list"] as? String, !list.isEmpty else { throw ReminderMutationError.invalid }
+        guard try reminderMutationAuthority.consumeDeletion(generation: generation, id: attempt) else { return false }
+        eventStore.refreshSourcesIfNecessary()
+        guard let reminder = eventStore.calendarItem(withIdentifier: reminderId) as? EKReminder else { return true }
+        guard reminder.calendar.calendarIdentifier == list else { throw ReminderMutationError.retired }
+        try eventStore.remove(reminder, commit: true)
+        return true
+    }
+
     private func createAcceptedReminder(
         _ arguments: [String: Any], generation: String, result: @escaping FlutterResult
     ) throws {
-        guard let attempt = arguments["attempt"] as? String,
-              let listId = arguments["list"] as? String,
-              let marker = arguments["marker"] as? String,
-              marker.hasPrefix("timefinder://reminder/"),
-              marker.count == "timefinder://reminder/".count + 64,
-              let url = URL(string: marker),
-              let values = arguments["values"] as? [String: Any],
-              Set(values.keys) == Set(["title", "notes", "isCompleted", "dueDate"]) else {
-            throw ReminderMutationError.invalid
-        }
-        let parsed = try AcceptedReminderFields(values)
+        guard let attempt = arguments["attempt"] as? String else { throw ReminderMutationError.invalid }
+        let creation = try AcceptedReminderCreation(arguments)
         eventStore.refreshSourcesIfNecessary()
         eventStore.fetchReminders(matching: eventStore.predicateForReminders(in: nil)) { [self] reminders in
             eventKitQueue.async { [self] in
                 do {
                     eventStore.refreshSourcesIfNecessary()
-                    guard let reminders, let calendar = eventStore.calendar(withIdentifier: listId) else {
-                        throw ReminderMutationError.retired
-                    }
-                    try reminderMutationAuthority.consumeCreation(generation: generation, id: attempt)
-                    let matches = reminders.filter { $0.url == url }
-                    guard matches.count <= 1 else { throw ReminderMutationError.invalid }
-                    let reminder: EKReminder
-                    if let match = matches.first {
-                        guard let existing = eventStore.calendarItem(
-                            withIdentifier: match.calendarItemIdentifier
-                        ) as? EKReminder, existing.calendar.calendarIdentifier == listId else {
-                            throw ReminderMutationError.retired
-                        }
-                        // A lost create response never authorizes overwriting
-                        // independent edits made to that already-created item.
-                        reminder = existing
-                    } else {
-                        reminder = EKReminder(eventStore: eventStore)
-                        reminder.calendar = calendar
-                        reminder.title = parsed.title!
-                        reminder.notes = parsed.notes
-                        reminder.isCompleted = parsed.completed!
-                        reminder.dueDateComponents = parsed.due
-                        reminder.url = url
-                        try eventStore.save(reminder, commit: true)
-                    }
-                    let id = reminder.calendarItemIdentifier
+                    guard let reminders else { throw ReminderMutationError.invalid }
+                    let fields = try reminderMutationAuthority.consumeCreation(
+                        generation: generation, id: attempt, fields: creation.adoptedFields
+                    )
+                    let id = try materializeReminder(creation, reminders: reminders, fields: fields)
                     DispatchQueue.main.async { result(id) }
                 } catch {
                     let code = (error as? ReminderMutationError)?.rawValue ?? "SAVE_ERROR"
@@ -130,6 +114,46 @@ extension DeviceCalendarPlugin {
                 }
             }
         }
+    }
+
+    private func materializeReminder(
+        _ creation: AcceptedReminderCreation, reminders: [EKReminder], fields: Set<String>
+    ) throws -> String {
+        guard let calendar = eventStore.calendar(withIdentifier: creation.list) else {
+            throw ReminderMutationError.retired
+        }
+        let existing = creation.existingId.flatMap { eventStore.calendarItem(withIdentifier: $0) as? EKReminder }
+        let matches = existing.map { [$0] } ?? reminders.filter { $0.url == creation.url }
+        guard matches.count <= 1 else { throw ReminderMutationError.invalid }
+        let reminder: EKReminder
+        if let match = matches.first {
+            guard let existing = eventStore.calendarItem(
+                withIdentifier: match.calendarItemIdentifier
+            ) as? EKReminder, existing.calendar.calendarIdentifier == creation.list else {
+                throw ReminderMutationError.retired
+            }
+            reminder = existing
+            // A recovered identity retains external fields; only a fresh
+            // accepted field grant can update it after creation.
+            applyReminderFields(creation.adoption, to: reminder, fields: fields)
+            if !fields.isEmpty { try eventStore.save(reminder, commit: true) }
+        } else {
+            reminder = EKReminder(eventStore: eventStore)
+            reminder.calendar = calendar
+            applyReminderFields(
+                creation.baseline, to: reminder, fields: ["title", "notes", "isCompleted", "dueDate"]
+            )
+            reminder.url = creation.url
+            try eventStore.save(reminder, commit: true)
+        }
+        return reminder.calendarItemIdentifier
+    }
+
+    private func applyReminderFields(_ values: AcceptedReminderFields, to reminder: EKReminder, fields: Set<String>) {
+        if fields.contains("title") { reminder.title = values.title! }
+        if fields.contains("notes") { reminder.notes = values.notes }
+        if fields.contains("isCompleted") { reminder.isCompleted = values.completed! }
+        if fields.contains("dueDate") { reminder.dueDateComponents = values.due }
     }
 
     private func updateAcceptedReminder(
@@ -146,12 +170,37 @@ extension DeviceCalendarPlugin {
         eventStore.refreshSourcesIfNecessary()
         guard let reminder = eventStore.calendarItem(withIdentifier: id) as? EKReminder,
               reminder.calendar.calendarIdentifier == list else { throw ReminderMutationError.retired }
-        if owned.contains("title") { reminder.title = parsed.title! }
-        if owned.contains("notes") { reminder.notes = parsed.notes }
-        if owned.contains("isCompleted") { reminder.isCompleted = parsed.completed! }
-        if owned.contains("dueDate") { reminder.dueDateComponents = parsed.due }
+        applyReminderFields(parsed, to: reminder, fields: owned)
         try eventStore.save(reminder, commit: true)
         return true
+    }
+}
+
+private struct AcceptedReminderCreation {
+    let list: String
+    let url: URL
+    let baseline: AcceptedReminderFields
+    let adoption: AcceptedReminderFields
+    let adoptedFields: Set<String>
+    let existingId: String?
+
+    init(_ arguments: [String: Any]) throws {
+        guard let list = arguments["list"] as? String,
+              let marker = arguments["marker"] as? String,
+              marker.hasPrefix("timefinder://reminder/"),
+              marker.count == "timefinder://reminder/".count + 64,
+              let url = URL(string: marker),
+              let values = arguments["values"] as? [String: Any],
+              Set(values.keys) == Set(["title", "notes", "isCompleted", "dueDate"]) else {
+            throw ReminderMutationError.invalid
+        }
+        existingId = arguments["existingId"] as? String
+        self.list = list
+        self.url = url
+        baseline = try AcceptedReminderFields(values)
+        let fields = arguments["adoptValues"] as? [String: Any] ?? [:]
+        adoption = try AcceptedReminderFields(fields)
+        adoptedFields = Set(fields.keys)
     }
 }
 

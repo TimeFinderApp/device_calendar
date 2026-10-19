@@ -94,16 +94,30 @@ class ReminderMutationAttempt {
         true;
   }
 
+  Future<bool> delete({
+    required String reminderId,
+    required String listId,
+  }) async =>
+      await _invoke('deleteReminderForTask', {
+        'id': reminderId,
+        'list': listId,
+      }) ==
+      true;
+
   Future<String?> create({
     required String listId,
     required String marker,
     required Map<String, Object?> baseline,
+    Map<String, Object?> adoptValues = const {},
+    String? existingId,
   }) async {
     final frozen = jsonDecode(jsonEncode(baseline)) as Map<String, dynamic>;
     return await _invoke('createReminderForTask', {
       'list': listId,
       'marker': marker,
       'values': frozen,
+      'adoptValues': jsonDecode(jsonEncode(adoptValues)),
+      if (existingId != null) 'existingId': existingId,
     }) as String?;
   }
 
