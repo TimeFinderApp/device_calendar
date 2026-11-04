@@ -28,11 +28,11 @@ String readFlutterEngineVersion() {
 
 android {
     namespace = 'com.builttoroam.devicecalendar'
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
-        minSdk = 21
-        targetSdk = 35
+        minSdk = 24
+        targetSdk = 37
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -86,8 +86,7 @@ android {
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:2.4.21"
     implementation 'com.google.code.gson:gson:2.15.0'
-    // Core 1.16 is the final stable line supporting this plugin's API 21 minimum.
-    implementation 'androidx.core:core:1.16.0'
+    implementation 'androidx.core:core:1.19.1'
     implementation 'org.dmfs:lib-recur:0.17.1'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0'
     implementation 'androidx.annotation:annotation:1.11.0'
