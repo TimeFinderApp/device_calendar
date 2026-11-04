@@ -27,3 +27,8 @@ example/ios/Flutter/Flutter.podspec
 .build/
 .swiftpm/
 Package.resolved
+
+# FVM project links and Flutter-generated integration files
+.fvm/
+example/ios/Flutter/ephemeral/
+example/macos/Flutter/ephemeral/
