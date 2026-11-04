@@ -4,7 +4,8 @@ version: 4.4.0
 homepage: https://github.com/builttoroam/device_calendar/tree/master/device_calendar
 
 environment:
-  sdk: ">=3.10.0 <4.0.0"
+  # Preserve the owned runtime's language mode. Flutter and timezone require Dart 3.10+.
+  sdk: ">=2.12.0 <4.0.0"
   flutter: ">=3.38.0"
 
 dependencies:
