@@ -541,62 +541,62 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
     private func retrieveEvents(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
         checkPermissionsThenExecute(permissionsGrantedAction: { [weak self] in
             guard let self = self else { return }
-
             guard let arguments = call.arguments as? [String: AnyObject],
                   let calendarId = arguments[self.calendarIdArgument] as? String else {
-                self.finishWithFlutterError(
+                self.finishWithFlutterError(result: result, code: "INVALID_ARGUMENTS", message: "Missing arguments")
+                return
+            }
+            guard let calendar = self.eventStore.calendar(withIdentifier: calendarId) else {
+                self.finishWithCalendarNotFoundError(result: result, calendarId: calendarId)
+                return
+            }
+
+            let startMilliseconds = arguments[self.startDateArgument] as? NSNumber
+            let endMilliseconds = arguments[self.endDateArgument] as? NSNumber
+            let eventIds = arguments[self.eventIdsArgument] as? [String]
+            let nativeEvents: [EKEvent]
+            if let startMilliseconds, let endMilliseconds {
+                nativeEvents = self.events(
+                    in: calendar,
+                    from: Date(timeIntervalSince1970: startMilliseconds.doubleValue / 1000.0),
+                    to: Date(timeIntervalSince1970: endMilliseconds.doubleValue / 1000.0)
+                )
+            } else {
+                nativeEvents = (eventIds ?? []).compactMap {
+                    self.eventStore.event(withIdentifier: $0)
+                }.filter { $0.calendar.calendarIdentifier == calendarId }
+            }
+            self.finishEventRetrieval(
+                calendarId: calendarId,
+                nativeEvents: nativeEvents,
+                eventIds: eventIds,
+                result: result
+            )
+        }, result: result, operationName: "retrieveEvents")
+    }
+
+    private func finishEventRetrieval(
+        calendarId: String,
+        nativeEvents: [EKEvent],
+        eventIds: [String]?,
+        result: @escaping FlutterResult
+    ) {
+        var events = [Event]()
+        for nativeEvent in nativeEvents {
+            guard let event = createEventFromEkEvent(calendarId: calendarId, ekEvent: nativeEvent) else {
+                finishWithFlutterError(
                     result: result,
-                    code: "INVALID_ARGUMENTS",
-                    message: "Missing arguments"
+                    code: genericError,
+                    message: "Calendar event identity is temporarily unavailable"
                 )
                 return
             }
-
-            let startDateMillisecondsSinceEpoch = arguments[self.startDateArgument] as? NSNumber
-            let endDateMillisecondsSinceEpoch = arguments[self.endDateArgument] as? NSNumber
-            let eventIdArgs = arguments[self.eventIdsArgument] as? [String]
-
-            var events = [Event]()
-
-            let specifiedStartEndDates = startDateMillisecondsSinceEpoch != nil && endDateMillisecondsSinceEpoch != nil
-
-            if specifiedStartEndDates {
-                let startDate = Date(timeIntervalSince1970: startDateMillisecondsSinceEpoch!.doubleValue / 1000.0)
-                let endDate = Date(timeIntervalSince1970: endDateMillisecondsSinceEpoch!.doubleValue / 1000.0)
-
-                if let ekCalendar = self.eventStore.calendar(withIdentifier: calendarId) {
-                    let ekEvents = self.events(in: ekCalendar, from: startDate, to: endDate)
-                    for ekEvent in ekEvents {
-                        if let event = self.createEventFromEkEvent(calendarId: calendarId, ekEvent: ekEvent) {
-                            events.append(event)
-                        }
-                    }
-                }
-            }
-
-            guard let eventIds = eventIdArgs else {
-                self.encodeJsonAndFinish(codable: events, result: result)
-                return
-            }
-
-            if specifiedStartEndDates {
-                events = events.filter { e in
-                    e.calendarId == calendarId && eventIds.contains(e.eventId)
-                }
-
-                self.encodeJsonAndFinish(codable: events, result: result)
-                return
-            }
-
-            for eventId in eventIds {
-                if let ekEvent = self.eventStore.event(withIdentifier: eventId),
-                   let event = self.createEventFromEkEvent(calendarId: calendarId, ekEvent: ekEvent) {
-                    events.append(event)
-                }
-            }
-
-            self.encodeJsonAndFinish(codable: events, result: result)
-        }, result: result, operationName: "retrieveEvents")
+            events.append(event)
+        }
+        if let eventIds {
+            events = events.filter { eventIds.contains($0.eventId) }
+        }
+        encodeJsonAndFinish(codable: events, result: result)
     }
 
     private func events(in calendar: EKCalendar, from startDate: Date, to endDate: Date) -> [EKEvent] {

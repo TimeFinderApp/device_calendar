@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -269,7 +268,23 @@ class Event {
 
     if (json['recurrenceRule'] != null) {
       try {
-        if (Platform.isAndroid) {
+        final nativeRule = json['recurrenceRule'] as Map<String, dynamic>;
+        final providerRule = nativeRule.containsKey('recurrenceFrequency')
+            ? nativeRule['sourceRruleString']
+            : null;
+        if (providerRule != null) {
+          // The compact Android fields cannot express multiple selectors or
+          // the provider's exact cutoff, so retain its original RFC rule.
+          final source = providerRule as String;
+          recurrenceRule = RecurrenceRule.fromString(
+            source.toUpperCase().startsWith('RRULE:')
+                ? source
+                : 'RRULE:$source',
+          );
+        }
+        if (recurrenceRule == null &&
+            (Platform.isAndroid ||
+                nativeRule.containsKey('recurrenceFrequency'))) {
           // Convert Android format to RFC format
           final rfc = RecurrenceRuleConverter.toRfc(json['recurrenceRule']);
           if (rfc != null) {
@@ -341,21 +356,15 @@ class Event {
           }
         }
 
-        if (json['recurrenceRule'] != null) {
+        if (recurrenceRule == null && json['recurrenceRule'] != null) {
           // Sanitize the recurrence rule to handle malformed rules from third-party apps
           final sanitizedRule = _sanitizeRecurrenceRule(json['recurrenceRule']);
           recurrenceRule = RecurrenceRule.fromJson(sanitizedRule);
         }
-      } catch (e, stackTrace) {
-        FlutterError.reportError(FlutterErrorDetails(
-          exception: e,
-          stack: stackTrace,
-          library: 'device_calendar plugin',
-          context: ErrorDescription('while parsing RecurrenceRule from JSON'),
-          informationCollector: () => [
-            DiagnosticsNode.message('JSON: ${jsonEncode(json)}'),
-          ],
-        ));
+      } catch (e) {
+        // A supplied series must not become a single occurrence: callers use
+        // these identities to reconcile existing imports and detect removal.
+        throw FormatException('Invalid calendar recurrence rule: $e');
       }
     }
 

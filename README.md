@@ -4,6 +4,8 @@
 
 A cross platform plugin for modifying calendars on the user's device.
 
+The owned Calendar snapshot and provider-write contracts, verification evidence, and open audit findings are maintained in the [Calendar sync integrity audit](docs/calendar-sync-integrity-audit-2026-11-14.md).
+
 ## Breaking changes at v4
 
 * **If you're upgrading from previous versions, your code will need to be modified (slightly), otherwise it will not run after update. See [Timezone support](https://github.com/builttoroam/device_calendar#timezone-support-with-tzdatetime) for more details.**

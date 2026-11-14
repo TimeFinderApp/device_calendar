@@ -138,19 +138,33 @@ class DeviceCalendarPlugin {
               ChannelConstants.parameterNameEventIds:
                   retrieveEventsParams?.eventIds,
             },
-        /*evaluateResponse: (rawData) => UnmodifiableListView(
-        json
-            .decode(rawData)
-            .map<Event>((decodedEvent) => Event.fromJson(decodedEvent)),
-      ),*/
-        evaluateResponse: (rawData) => UnmodifiableListView(
-              json.decode(rawData).map<Event>((decodedEvent) {
-                // MZ - Added for debugging purposes
-                // debugPrint("RAW_DATA: $decodedEvent");
-
-                return Event.fromJson(decodedEvent);
-              }),
-            ));
+        evaluateResponse: (rawData) {
+          final decoded = json.decode(rawData);
+          if (decoded is! List) {
+            throw const FormatException('Expected a calendar event list');
+          }
+          final events = <Event>[];
+          for (final value in decoded) {
+            if (value is! Map<String, dynamic>) {
+              throw const FormatException('Invalid calendar event');
+            }
+            final id = value['eventId'];
+            final start = value['eventStartDate'];
+            final end = value['eventEndDate'];
+            if (id is! String ||
+                id.isEmpty ||
+                value['calendarId'] != calendarId ||
+                start is! int ||
+                end is! int ||
+                end < start) {
+              throw const FormatException('Incomplete calendar event');
+            }
+            events.add(Event.fromJson(value));
+          }
+          // Import uses absence to remove stored events; decoding must finish
+          // inside the guarded call before a snapshot is reported as complete.
+          return UnmodifiableListView(events);
+        });
   }
 
   /// Deletes an event from a calendar. For a recurring event, this will delete all instances of it.\
@@ -404,18 +418,15 @@ class DeviceCalendarPlugin {
             "INVOKE_CHANNEL_METHOD_ERROR! Name: ${e.name}, InvalidValue: ${e.invalidValue}, Message: ${e.message}, ${e.toString()}");
       } else if (e is PlatformException) {
         debugPrint('INVOKE_CHANNEL_METHOD_ERROR: $e\n$s');
-        // Add PlatformException to result.errors so it can be detected by callers
-        _parsePlatformExceptionAndUpdateResult<T>(e, result);
-      } else {
-        _parsePlatformExceptionAndUpdateResult<T>(e as Exception?, result);
       }
+      _parsePlatformExceptionAndUpdateResult<T>(e, result);
     }
 
     return result;
   }
 
   void _parsePlatformExceptionAndUpdateResult<T>(
-      Exception? exception, Result<T> result) {
+      Object? exception, Result<T> result) {
     if (exception == null) {
       result.errors.add(
         const ResultError(

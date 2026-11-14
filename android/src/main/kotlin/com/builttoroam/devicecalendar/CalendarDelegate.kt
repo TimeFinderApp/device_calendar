@@ -429,23 +429,24 @@ class CalendarDelegate(
                 val eventsSortOrder = CalendarContract.Instances.BEGIN + " DESC"
 
                 val eventsCursor = contentResolver?.query(eventsUri, EVENT_PROJECTION, eventsSelectionQuery, null, eventsSortOrder)
+                    ?: throw IllegalStateException("Calendar provider returned no event snapshot")
                 val events: MutableList<Event> = mutableListOf()
 
                 try {
-                    if (eventsCursor == null || eventsCursor.count == 0) {
+                    if (eventsCursor.count == 0) {
                         logZeroInstanceProviderProbe(
                             calendar = calendar,
                             calendarId = calendarId,
                             startDate = startDate,
                             endDate = endDate,
                             eventsUri = eventsUri,
-                            instanceCursorWasNull = eventsCursor == null,
+                            instanceCursorWasNull = false,
                             contentResolver = contentResolver
                         )
                     }
                     val queriedEventIds = mutableSetOf<Long>()
                     val originalIds = mutableSetOf<Long>()
-                    while (eventsCursor?.moveToNext() == true) {
+                    while (eventsCursor.moveToNext()) {
                         val eventId = eventsCursor.getLong(EVENT_PROJECTION_ID_INDEX)
                         val originalId = eventsCursor.getString(EVENT_PROJECTION_ORIGINAL_ID_INDEX)
                         queriedEventIds.add(eventId)
@@ -456,6 +457,9 @@ class CalendarDelegate(
 
                     val allIdsToQuery = queriedEventIds.union(originalIds)
                     val rruleMap = batchQueryRRules(allIdsToQuery, contentResolver)
+                    check(rruleMap.keys.containsAll(queriedEventIds)) {
+                        "Calendar provider returned incomplete event metadata"
+                    }
                     Log.d("DeviceCalendar", "Calendar $calendarId: Batch queried ${rruleMap.size} RRULEs for ${allIdsToQuery.size} unique events")
                     logDiagnostic("info", "Batch RRULE query complete", mapOf(
                         "calendar_id" to calendarId,
@@ -473,13 +477,13 @@ class CalendarDelegate(
                         ))
                     }
 
-                    eventsCursor?.moveToPosition(-1)
+                    eventsCursor.moveToPosition(-1)
 
                     var skippedCount = 0
                     var totalCount = 0
                     val instanceCountPerEvent = mutableMapOf<Long, Int>()
 
-                    while (eventsCursor?.moveToNext() == true) {
+                    while (eventsCursor.moveToNext()) {
                         totalCount++
                         val eventId = eventsCursor.getLong(EVENT_PROJECTION_ID_INDEX)
                         instanceCountPerEvent[eventId] = (instanceCountPerEvent[eventId] ?: 0) + 1
@@ -517,16 +521,22 @@ class CalendarDelegate(
                         "total_queried" to totalCount
                     ))
 
+                    val attendeesByEventId = mutableMapOf<String, MutableList<Attendee>>()
+                    val remindersByEventId = mutableMapOf<String, MutableList<Reminder>>()
                     for (event in events) {
-                        val attendees = retrieveAttendees(calendar, event.eventId!!, contentResolver)
+                        val attendees = attendeesByEventId.getOrPut(event.eventId!!) {
+                            retrieveAttendees(calendar, event.eventId!!, contentResolver)
+                        }
                         event.organizer = attendees.firstOrNull { it.isOrganizer != null && it.isOrganizer }
-                        event.attendees = attendees
-                        event.reminders = retrieveReminders(event.eventId!!, contentResolver)
+                        event.attendees = attendees.toMutableList()
+                        event.reminders = remindersByEventId.getOrPut(event.eventId!!) {
+                            retrieveReminders(event.eventId!!, contentResolver)
+                        }.toMutableList()
                     }
 
                     finishWithSuccess(_gson?.toJson(events), pendingChannelResult)
                 } finally {
-                    eventsCursor?.close()
+                    eventsCursor.close()
                 }
             }
         } else {
@@ -621,13 +631,21 @@ class CalendarDelegate(
                 val values = buildEventContentValues(event, calendarId)
 
                 var eventId: Long? = event.eventId?.toLongOrNull()
+                if (event.eventId != null && eventId == null) {
+                    finishWithError(INVALID_ARGUMENT, "Invalid event ID", pendingChannelResult)
+                    return@runCalendarWork
+                }
                 if (eventId == null) {
                     val uri = contentResolver?.insert(Events.CONTENT_URI, values)
                     eventId = java.lang.Long.parseLong(uri?.lastPathSegment!!)
                     insertAttendees(event.attendees, eventId, contentResolver)
                     insertReminders(event.reminders, eventId, contentResolver)
                 } else {
-                    contentResolver?.update(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), values, null, null)
+                    val updatedRows = contentResolver?.update(ContentUris.withAppendedId(Events.CONTENT_URI, eventId), values, null, null)
+                    if (updatedRows != 1) {
+                        finishWithError(NOT_FOUND, "The event with ID $eventId could not be found", pendingChannelResult)
+                        return@runCalendarWork
+                    }
                     val existingAttendees = retrieveAttendees(calendar, eventId.toString(), contentResolver)
                     val attendeesToDelete = if (event.attendees.isNotEmpty()) {
                         existingAttendees.filter { existingAttendee ->
@@ -742,24 +760,37 @@ class CalendarDelegate(
 
     private fun buildEventContentValues(event: Event, calendarId: String): ContentValues {
         val values = ContentValues()
-        val duration: String? = null
         values.put(Events.ALL_DAY, event.eventAllDay)
         values.put(Events.DTSTART, event.eventStartDate!!)
         values.put(Events.EVENT_TIMEZONE, getTimeZone(event.eventStartTimeZone).id)
-        values.put(Events.DTEND, event.eventEndDate!!)
         values.put(Events.EVENT_END_TIMEZONE, getTimeZone(event.eventEndTimeZone).id)
         values.put(Events.TITLE, event.eventTitle)
         values.put(Events.DESCRIPTION, event.eventDescription)
         values.put(Events.EVENT_LOCATION, event.eventLocation)
         values.put(Events.CUSTOM_APP_URI, event.eventURL)
         values.put(Events.CALENDAR_ID, calendarId)
-        values.put(Events.DURATION, duration)
         values.put(Events.AVAILABILITY, getAvailability(event.availability))
         values.put(Events.STATUS, getEventStatus(event.eventStatus))
 
         if (event.recurrenceRule != null) {
+            val durationMillis = event.eventEndDate!! - event.eventStartDate!!
+            require(durationMillis >= 0) { "Event ends before it starts" }
+            val duration = if (event.eventAllDay) {
+                "P${durationMillis / DateUtils.DAY_IN_MILLIS}D"
+            } else {
+                "PT${(durationMillis + 999) / 1000}S"
+            }
+            values.putNull(Events.DTEND)
+            values.put(Events.DURATION, duration)
             val recurrenceRuleParams = buildRecurrenceRuleParams(event.recurrenceRule!!)
             values.put(Events.RRULE, recurrenceRuleParams)
+        } else {
+            values.put(Events.DTEND, event.eventEndDate!!)
+            values.putNull(Events.DURATION)
+            values.putNull(Events.RRULE)
+            values.putNull(Events.RDATE)
+            values.putNull(Events.EXRULE)
+            values.putNull(Events.EXDATE)
         }
         return values
     }
@@ -1420,9 +1451,9 @@ class CalendarDelegate(
             selection,
             null,
             null
-        )
+        ) ?: throw IllegalStateException("Calendar provider returned no recurrence metadata")
 
-        cursor?.use {
+        cursor.use {
             while (it.moveToNext()) {
                 val eventId = it.getLong(0)
                 val rrule = it.getString(1)
@@ -1449,17 +1480,17 @@ class CalendarDelegate(
                 else -> null
             }
 
-            // Skip events with unsupported frequencies (HOURLY, SECONDLY, etc.)
             if (frequency == null) {
                 Log.w("DeviceCalendar", "Skipping event with unsupported frequency: ${rfcRecurrenceRule.freq} in RRULE: $recurrenceRuleString")
                 logDiagnostic("warning", "Unsupported RRULE frequency", mapOf(
                     "frequency" to rfcRecurrenceRule.freq.toString(),
                     "rrule" to recurrenceRuleString
                 ))
-                return null
+                throw IllegalArgumentException("Unsupported calendar recurrence frequency: ${rfcRecurrenceRule.freq}")
             }
 
             val recurrenceRule = RecurrenceRule(frequency)
+            recurrenceRule.sourceRruleString = recurrenceRuleString
             if (rfcRecurrenceRule.count != null) {
                 recurrenceRule.totalOccurrences = rfcRecurrenceRule.count
             }
@@ -1503,7 +1534,7 @@ class CalendarDelegate(
                 "rrule" to recurrenceRuleString,
                 "error" to (e.message ?: "unknown error")
             ))
-            null
+            throw IllegalArgumentException("Invalid calendar recurrence rule", e)
         }
     }
 

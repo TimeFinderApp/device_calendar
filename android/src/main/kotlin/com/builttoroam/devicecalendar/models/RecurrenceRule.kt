@@ -5,6 +5,7 @@ import com.builttoroam.devicecalendar.common.RecurrenceFrequency
 
 
 class RecurrenceRule(val recurrenceFrequency: RecurrenceFrequency) {
+    var sourceRruleString: String? = null
     var totalOccurrences: Int? = null
     var interval: Int? = null
     var endDate: Long? = null
