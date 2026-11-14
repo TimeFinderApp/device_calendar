@@ -64,21 +64,72 @@ void main() {
     ]);
   });
 
-  test('invalid bounds reject whole native snapshot', () async {
-    await expectRejected([
-      event,
-      {...event, 'eventStartDate': event['eventEndDate'], 'eventEndDate': 1}
-    ]);
-  });
+  Future<Result<List<Event>>> retrieve(Object? payload) {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async => jsonEncode(payload));
+    return plugin.retrieveEvents('calendar-1', params);
+  }
 
-  test('invalid recurrence cannot become a single occurrence', () async {
-    await expectRejected([
-      {
-        ...event,
-        'recurrenceRule': {'freq': 'INVALID', 'interval': 1}
-      }
-    ]);
-  });
+  test(
+    'one event ending before it starts does not fail the snapshot',
+    () async {
+      final result = await retrieve([
+        event,
+        {...event, 'eventStartDate': event['eventEndDate'], 'eventEndDate': 1},
+      ]);
+      expect(result.isSuccess, isTrue);
+      expect(result.data, hasLength(2));
+    },
+  );
+
+  test(
+    'unreadable recurrence keeps identity without becoming single events',
+    () async {
+      final result = await retrieve([
+        event,
+        {
+          ...event,
+          'eventId': 'series-1',
+          'recurrenceRule': {'freq': 'INVALID', 'interval': 1},
+        },
+        {...event, 'eventId': 'series-2', 'recurrenceRuleUnreadable': true},
+      ]);
+      expect(result.isSuccess, isTrue);
+      final events = result.data!;
+      expect(events.map((item) => item.eventId), [
+        'event-1',
+        'series-1',
+        'series-2',
+      ]);
+      expect(events.map((item) => item.recurrenceRuleUnreadable), [
+        false,
+        true,
+        true,
+      ]);
+      expect(events.map((item) => item.recurrenceRule), everyElement(isNull));
+    },
+  );
+
+  test(
+    'attendee values outside the known enums do not fail the snapshot',
+    () async {
+      final result = await retrieve([
+        {
+          ...event,
+          'attendees': [
+            {
+              'name': 'Room',
+              'emailAddress': 'room@test.timefinder',
+              'role': 4,
+              'attendanceStatus': 99,
+            },
+          ],
+        },
+      ]);
+      expect(result.isSuccess, isTrue);
+      expect(result.data!.single.attendees!.single!.role, AttendeeRole.None);
+    },
+  );
 
   test('complete empty native snapshot remains successful', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -86,6 +137,18 @@ void main() {
     final result = await plugin.retrieveEvents('calendar-1', params);
     expect(result.isSuccess, isTrue);
     expect(result.data, isEmpty);
+  });
+
+  test('native error code survives the Flutter result boundary', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async {
+      throw PlatformException(
+          code: '404', message: 'The event with ID event-1 could not be found');
+    });
+    final result = await plugin.retrieveEvents('calendar-1', params);
+    expect(result.isSuccess, isFalse);
+    expect(result.errors.single.nativeErrorCode, '404');
+    expect(result.errors.single.errorMessage, contains('event-1'));
   });
 
   test('valid repeated instances retain identity and original dates', () async {

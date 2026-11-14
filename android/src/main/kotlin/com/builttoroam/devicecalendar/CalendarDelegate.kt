@@ -1338,14 +1338,14 @@ class CalendarDelegate(
         // The batch approach eliminates N individual ContentResolver queries (one per recurring instance)
         if (recurringRule != null) {
             // RRULE provided directly in Instances table cursor
-            event.recurrenceRule = parseRecurrenceRuleString(recurringRule)
+            readRecurrenceRule(event, recurringRule)
         } else if (rruleMap != null) {
             // Use pre-fetched batch query result (fast lookup, no additional query)
             val lookupId = if (originalId != null) originalId.toLong() else eventId
             val rruleFromMap = rruleMap[lookupId]
             if (rruleFromMap != null) {
                 Log.d("DeviceCalendar", "Event $eventId: Using batch-queried RRULE: ${rruleFromMap.take(50)}")
-                event.recurrenceRule = parseRecurrenceRuleString(rruleFromMap)
+                readRecurrenceRule(event, rruleFromMap)
             } else {
                 Log.d("DeviceCalendar", "Event $eventId: No RRULE in batch results - not a recurring event")
             }
@@ -1369,7 +1369,7 @@ class CalendarDelegate(
                     } else {
                         Log.w("DeviceCalendar", "Event $eventId: Fallback query returned null RRULE from Events table")
                     }
-                    event.recurrenceRule = parseRecurrenceRuleString(originalRecurringRule)
+                    readRecurrenceRule(event, originalRecurringRule)
                 } else {
                     Log.w("DeviceCalendar", "Event $eventId: Fallback query failed - cursor empty or null")
                 }
@@ -1389,7 +1389,7 @@ class CalendarDelegate(
                     val eventRecurringRule = eventCursor.getString(0)
                     if (eventRecurringRule != null) {
                         Log.d("DeviceCalendar", "Event $eventId: Fallback query succeeded, found RRULE: ${eventRecurringRule.take(50)}")
-                        event.recurrenceRule = parseRecurrenceRuleString(eventRecurringRule)
+                        readRecurrenceRule(event, eventRecurringRule)
                     } else {
                         Log.d("DeviceCalendar", "Event $eventId: Fallback query returned null - not a recurring event")
                     }
@@ -1407,7 +1407,7 @@ class CalendarDelegate(
 
         val recurringIdentity = AndroidRecurringIdentityNormalizer.normalize(
             eventId = eventId.toString(),
-            hasRecurrence = event.recurrenceRule != null,
+            hasRecurrence = event.recurrenceRule != null || event.recurrenceRuleUnreadable == true,
             originalId = originalId,
             originalSyncId = originalSyncId,
             syncId = syncId,
@@ -1463,6 +1463,18 @@ class CalendarDelegate(
 
         Log.d("DeviceCalendar", "Batch query: Found RRULEs for ${rruleMap.count { it.value != null }} of ${eventIds.size} events")
         return rruleMap
+    }
+
+    // One series this plugin cannot represent must not fail every other event,
+    // and must not be reported as single events. It keeps its identity so the
+    // caller can leave what it already stored untouched.
+    private fun readRecurrenceRule(event: Event, recurrenceRuleString: String?) {
+        try {
+            event.recurrenceRule = parseRecurrenceRuleString(recurrenceRuleString)
+        } catch (e: IllegalArgumentException) {
+            event.recurrenceRule = null
+            event.recurrenceRuleUnreadable = true
+        }
     }
 
     private fun parseRecurrenceRuleString(recurrenceRuleString: String?): RecurrenceRule? {

@@ -55,6 +55,12 @@ class Event {
   /// Indicates if this event is detached from the recurring event series (For iOS only)
   bool? eventIsDetached;
 
+  /// The native event repeats, but its rule could not be represented.
+  ///
+  /// The event keeps its identity so callers can leave stored data for it
+  /// untouched instead of treating the series as single events or as removed.
+  bool recurrenceRuleUnreadable = false;
+
   /// Indicates when the original occurrence of the event starts
   /// This is only used when the event is a detached event from a recurring event series (For iOS only)
   TZDateTime? eventOriginalOccurrenceDate;
@@ -250,6 +256,7 @@ class Event {
     }
 
     eventIsDetached = json['eventIsDetached'];
+    recurrenceRuleUnreadable = json['recurrenceRuleUnreadable'] == true;
     recurringSegmentId = json['recurringSegmentId'];
     recurringLineageId = json['recurringLineageId'];
     androidOriginalId = json['androidOriginalId'];
@@ -364,7 +371,8 @@ class Event {
       } catch (e) {
         // A supplied series must not become a single occurrence: callers use
         // these identities to reconcile existing imports and detect removal.
-        throw FormatException('Invalid calendar recurrence rule: $e');
+        recurrenceRule = null;
+        recurrenceRuleUnreadable = true;
       }
     }
 
@@ -398,6 +406,7 @@ class Event {
     data['availability'] = availability.enumToString;
     data['eventStatus'] = status?.enumToString;
     data['eventIsDetached'] = eventIsDetached;
+    data['recurrenceRuleUnreadable'] = recurrenceRuleUnreadable;
     data['eventOriginalOccurrenceDate'] =
         eventOriginalOccurrenceDate?.millisecondsSinceEpoch;
     data['recurringSegmentId'] = recurringSegmentId;

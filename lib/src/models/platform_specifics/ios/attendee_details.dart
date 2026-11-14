@@ -10,8 +10,11 @@ class IosAttendeeDetails {
       throw ArgumentError(ErrorMessages.fromJsonMapIsNull);
     }
 
-    if (json['attendanceStatus'] != null && json['attendanceStatus'] is int) {
-      attendanceStatus = IosAttendanceStatus.values[json['attendanceStatus']];
+    final status = json['attendanceStatus'];
+    if (status is int &&
+        status >= 0 &&
+        status < IosAttendanceStatus.values.length) {
+      attendanceStatus = IosAttendanceStatus.values[status];
     }
   }
 

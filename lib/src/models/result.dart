@@ -28,6 +28,7 @@ class Result<T> {
 class ResultError {
   final int errorCode;
   final String errorMessage;
+  final String? nativeErrorCode;
 
-  const ResultError(this.errorCode, this.errorMessage);
+  const ResultError(this.errorCode, this.errorMessage, {this.nativeErrorCode});
 }

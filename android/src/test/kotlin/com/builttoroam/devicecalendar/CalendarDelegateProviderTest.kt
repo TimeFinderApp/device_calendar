@@ -70,21 +70,17 @@ class CalendarDelegateProviderTest {
     }
 
     @Test
-    fun `malformed recurrence cannot become independent single events`() {
+    fun `malformed recurrence keeps one series identity instead of single events`() {
         provider.instanceCount = 2
         provider.recurrenceRule = "FREQ=INVALID"
-        val result = retrieve()
-        assertNotNull(result.error)
-        assertNull(result.value)
+        assertUnreadableSeries(retrieve())
     }
 
     @Test
-    fun `unsupported recurrence fails without collapsing occurrence identities`() {
+    fun `unsupported recurrence keeps one series identity without failing the snapshot`() {
         provider.instanceCount = 2
         provider.recurrenceRule = "FREQ=HOURLY"
-        val result = retrieve()
-        assertNotNull(result.error)
-        assertNull(result.value)
+        assertUnreadableSeries(retrieve())
     }
 
     @Test
@@ -185,6 +181,18 @@ class CalendarDelegateProviderTest {
         eventEndDate = eventStartDate!! + 3_600_000L
         eventStartTimeZone = "UTC"
         eventEndTimeZone = "UTC"
+    }
+
+    private fun assertUnreadableSeries(result: CapturedResult) {
+        assertNull(result.error)
+        val events = com.google.gson.JsonParser.parseString(result.value as String).asJsonArray
+        assertEquals(2, events.size())
+        for (event in events) {
+            val json = event.asJsonObject
+            assertEquals(true, json["recurrenceRuleUnreadable"].asBoolean)
+            assertEquals(false, json.has("recurrenceRule") && !json["recurrenceRule"].isJsonNull)
+        }
+        assertEquals(1, events.map { it.asJsonObject["recurringSegmentId"].asString }.distinct().size)
     }
 
     private fun retrieve(): CapturedResult {

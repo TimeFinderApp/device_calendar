@@ -11,9 +11,11 @@ class AndroidAttendeeDetails {
       throw ArgumentError(ErrorMessages.fromJsonMapIsNull);
     }
 
-    if (json['attendanceStatus'] != null && json['attendanceStatus'] is int) {
-      attendanceStatus =
-          AndroidAttendanceStatus.values[json['attendanceStatus']];
+    final status = json['attendanceStatus'];
+    if (status is int &&
+        status >= 0 &&
+        status < AndroidAttendanceStatus.values.length) {
+      attendanceStatus = AndroidAttendanceStatus.values[status];
     }
   }
 

@@ -47,7 +47,14 @@ class Attendee {
 
     name = json['name'];
     emailAddress = json['emailAddress'];
-    role = AttendeeRole.values[json['role'] ?? 0];
+    // Native roles outside this enum, such as EventKit's non-participant,
+    // are descriptive only and must not fail the event that carries them.
+    final roleIndex = json['role'];
+    role = roleIndex is int &&
+            roleIndex >= 0 &&
+            roleIndex < AttendeeRole.values.length
+        ? AttendeeRole.values[roleIndex]
+        : AttendeeRole.None;
     isOrganiser = json['isOrganizer'] ??
         false; // Getting and setting an organiser for Android
     isCurrentUser = json['isCurrentUser'] ?? false;

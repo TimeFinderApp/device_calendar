@@ -155,8 +155,7 @@ class DeviceCalendarPlugin {
                 id.isEmpty ||
                 value['calendarId'] != calendarId ||
                 start is! int ||
-                end is! int ||
-                end < start) {
+                end is! int) {
               throw const FormatException('Incomplete calendar event');
             }
             events.add(Event.fromJson(value));
@@ -444,6 +443,7 @@ class DeviceCalendarPlugin {
         ResultError(
           ErrorCodes.platformSpecific,
           '${ErrorMessages.unknownDeviceExceptionTemplate}, Code: ${exception.code}, Exception: ${exception.message}',
+          nativeErrorCode: exception.code,
         ),
       );
     } else {
