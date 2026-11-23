@@ -1575,14 +1575,36 @@ public class DeviceCalendarPlugin: DeviceCalendarPluginBase, FlutterPlugin {
             let predicate: NSPredicate? = eventStore.predicateForReminders(in: calendar)
             if let predicate = predicate {
                 eventStore.fetchReminders(matching: predicate) { reminders in
-                    let rems = reminders ?? []
-                    let resultArray = rems.map { Reminder(reminder: $0) }
+                    // EventKit reports a failed fetch (for example a transient store
+                    // error) as nil. Returning an empty inventory would make callers
+                    // conclude every Reminder was deleted.
+                    guard let reminders else {
+                        DispatchQueue.main.async {
+                            result(FlutterError(
+                                code: "reminders_fetch_failed",
+                                message: "EventKit could not fetch Reminders",
+                                details: nil
+                            ))
+                        }
+                        return
+                    }
+                    let resultArray = reminders.map { Reminder(reminder: $0) }
 
                     let encoder = JSONEncoder()
                     encoder.dateEncodingStrategy = .iso8601
 
-                    let json = try? encoder.encode(resultArray)
-                    result(String(data: json ?? Data(), encoding: .utf8))
+                    guard let json = try? encoder.encode(resultArray),
+                          let encoded = String(data: json, encoding: .utf8) else {
+                        DispatchQueue.main.async {
+                            result(FlutterError(
+                                code: "reminders_fetch_failed",
+                                message: "Failed to encode fetched Reminders",
+                                details: nil
+                            ))
+                        }
+                        return
+                    }
+                    DispatchQueue.main.async { result(encoded) }
                 }
             } else {
                 DispatchQueue.main.async {
