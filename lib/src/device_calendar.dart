@@ -303,7 +303,16 @@ class DeviceCalendarPlugin {
           ErrorMessages.createOrUpdateEventInvalidArgumentsMessage,
         );
       },
-      arguments: () => event.toJson(),
+      arguments: () {
+        final recurrence = event.recurrenceRule;
+        return {
+          ...event.toJson(),
+          // Android CalendarProvider takes the full RFC rule. EventKit uses
+          // the structured recurrence fields already supplied by Event.
+          if (recurrence != null)
+            'androidRecurrenceRule': recurrence.toString(),
+        };
+      },
     );
   }
 

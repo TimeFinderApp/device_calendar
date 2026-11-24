@@ -181,6 +181,29 @@ void main() {
     expect(result?.data, fakeNewEventId);
   });
 
+  test('UpdateEvent sends the complete recurrence to Android', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      log.add(call);
+      return '42';
+    });
+    final start = TZDateTime.utc(2026, 11, 24, 18, 30);
+    final event = Event('1')
+      ..eventId = '42'
+      ..start = start
+      ..end = start.add(const Duration(minutes: 30))
+      ..recurrenceRule = rrule.RecurrenceRule.fromString(
+          'RRULE:FREQ=DAILY;COUNT=10;INTERVAL=1');
+
+    final result = await deviceCalendarPlugin.createOrUpdateEvent(event);
+
+    expect(result?.data, '42');
+    final args = log.single.arguments as Map<dynamic, dynamic>;
+    expect(
+        args['androidRecurrenceRule'], 'RRULE:FREQ=DAILY;COUNT=10;INTERVAL=1');
+    expect(args['recurrenceRule'], containsPair('count', 10));
+  });
+
   test('Attendee_Serialises_Correctly', () async {
     final attendee = Attendee(
         name: 'Test Attendee',

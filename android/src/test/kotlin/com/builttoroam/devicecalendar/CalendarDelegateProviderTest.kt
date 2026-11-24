@@ -14,6 +14,7 @@ import com.builttoroam.devicecalendar.common.RecurrenceFrequency
 import com.builttoroam.devicecalendar.models.Event
 import com.builttoroam.devicecalendar.models.RecurrenceRule
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
@@ -141,6 +142,60 @@ class CalendarDelegateProviderTest {
         assertNull(result.error)
         assertEquals("P2D", provider.written!!.getAsString(CalendarContract.Events.DURATION))
         assertNull(provider.written!!.get(CalendarContract.Events.DTEND))
+    }
+
+    @Test
+    fun `channel updates a one-off to a bounded daily series`() {
+        val result = writeRuleThroughChannel(
+            eventId = "42",
+            rule = "RRULE:FREQ=DAILY;COUNT=10;INTERVAL=1",
+            rfcFields = mapOf("freq" to "DAILY", "count" to 10, "interval" to 1),
+        )
+        assertNull(result.error)
+        assertEquals("42", result.value)
+        assertEquals("FREQ=DAILY;COUNT=10;INTERVAL=1", provider.stored.getAsString(CalendarContract.Events.RRULE))
+        assertEquals("PT3600S", provider.stored.getAsString(CalendarContract.Events.DURATION))
+        assertNull(provider.stored.get(CalendarContract.Events.DTEND))
+    }
+
+    @Test
+    fun `channel creates a series with the full calendar rule`() {
+        val rule = "FREQ=MONTHLY;UNTIL=20261231T235959Z;BYDAY=-1FR"
+        val result = writeRuleThroughChannel(
+            eventId = null,
+            rule = "RRULE:$rule",
+            rfcFields = mapOf("freq" to "MONTHLY", "until" to "2026-12-31T23:59:59Z",
+                "byday" to listOf("-1FR")),
+        )
+        assertNull(result.error)
+        assertEquals("42", result.value)
+        assertEquals(rule, provider.written!!.getAsString(CalendarContract.Events.RRULE))
+    }
+
+    private fun writeRuleThroughChannel(
+        eventId: String?,
+        rule: String,
+        rfcFields: Map<String, Any>,
+    ): CapturedResult {
+        val plugin = DeviceCalendarPlugin()
+        val delegateField = DeviceCalendarPlugin::class.java.getDeclaredField("_calendarDelegate")
+        delegateField.isAccessible = true
+        delegateField.set(plugin, delegate)
+        val result = CapturedResult()
+        val arguments = mapOf(
+            "calendarId" to "1",
+            "eventId" to eventId,
+            "eventTitle" to "Planning",
+            "eventStartDate" to 1_794_657_600_000L,
+            "eventEndDate" to 1_794_661_200_000L,
+            "eventStartTimeZone" to "UTC",
+            "eventEndTimeZone" to "UTC",
+            "recurrenceRule" to rfcFields,
+            "androidRecurrenceRule" to rule,
+        )
+        plugin.onMethodCall(MethodCall("createOrUpdateEvent", arguments), result)
+        awaitResult(result)
+        return result
     }
 
     @Test

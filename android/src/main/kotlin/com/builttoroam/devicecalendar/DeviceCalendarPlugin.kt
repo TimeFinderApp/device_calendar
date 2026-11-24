@@ -59,6 +59,7 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
     private val EVENT_START_TIMEZONE_ARGUMENT = "eventStartTimeZone"
     private val EVENT_END_TIMEZONE_ARGUMENT = "eventEndTimeZone"
     private val RECURRENCE_RULE_ARGUMENT = "recurrenceRule"
+    private val ANDROID_RECURRENCE_RULE_ARGUMENT = "androidRecurrenceRule"
     private val RECURRENCE_FREQUENCY_ARGUMENT = "recurrenceFrequency"
     private val TOTAL_OCCURRENCES_ARGUMENT = "totalOccurrences"
     private val INTERVAL_ARGUMENT = "interval"
@@ -209,9 +210,12 @@ class DeviceCalendarPlugin() : FlutterPlugin, MethodCallHandler, ActivityAware {
         event.availability = parseAvailability(call.argument<String>(EVENT_AVAILABILITY_ARGUMENT))
         event.eventStatus = parseEventStatus(call.argument<String>(EVENT_STATUS_ARGUMENT))
 
-        if (call.hasArgument(RECURRENCE_RULE_ARGUMENT) && call.argument<Map<String, Any>>(RECURRENCE_RULE_ARGUMENT) != null) {
-            val recurrenceRule = parseRecurrenceRuleArgs(call)
-            event.recurrenceRule = recurrenceRule
+        event.androidRecurrenceRule =
+            call.argument<String>(ANDROID_RECURRENCE_RULE_ARGUMENT)?.removePrefix("RRULE:")
+        if (event.androidRecurrenceRule == null &&
+            call.argument<Map<String, Any>>(RECURRENCE_RULE_ARGUMENT) != null
+        ) {
+            event.recurrenceRule = parseRecurrenceRuleArgs(call)
         }
 
         if (call.hasArgument(ATTENDEES_ARGUMENT) && call.argument<List<Map<String, Any>>>(ATTENDEES_ARGUMENT) != null) {

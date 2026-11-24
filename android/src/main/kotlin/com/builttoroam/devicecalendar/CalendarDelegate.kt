@@ -772,7 +772,8 @@ class CalendarDelegate(
         values.put(Events.AVAILABILITY, getAvailability(event.availability))
         values.put(Events.STATUS, getEventStatus(event.eventStatus))
 
-        if (event.recurrenceRule != null) {
+        val recurrenceRule = event.androidRecurrenceRule ?: event.recurrenceRule?.let(::buildRecurrenceRuleParams)
+        if (recurrenceRule != null) {
             val durationMillis = event.eventEndDate!! - event.eventStartDate!!
             require(durationMillis >= 0) { "Event ends before it starts" }
             val duration = if (event.eventAllDay) {
@@ -782,8 +783,7 @@ class CalendarDelegate(
             }
             values.putNull(Events.DTEND)
             values.put(Events.DURATION, duration)
-            val recurrenceRuleParams = buildRecurrenceRuleParams(event.recurrenceRule!!)
-            values.put(Events.RRULE, recurrenceRuleParams)
+            values.put(Events.RRULE, recurrenceRule)
         } else {
             values.put(Events.DTEND, event.eventEndDate!!)
             values.putNull(Events.DURATION)

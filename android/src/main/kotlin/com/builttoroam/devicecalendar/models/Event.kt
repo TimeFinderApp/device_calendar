@@ -14,6 +14,8 @@ class Event {
     var eventURL: String? = null
     var attendees: MutableList<Attendee> = mutableListOf()
     var recurrenceRule: RecurrenceRule? = null
+    @Transient
+    internal var androidRecurrenceRule: String? = null
     var recurrenceRuleUnreadable: Boolean? = null
     var organizer: Attendee? = null
     var reminders: MutableList<Reminder> = mutableListOf()
