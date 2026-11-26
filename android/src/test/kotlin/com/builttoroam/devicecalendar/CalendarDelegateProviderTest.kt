@@ -12,6 +12,7 @@ import android.provider.CalendarContract
 import com.builttoroam.devicecalendar.common.Constants
 import com.builttoroam.devicecalendar.common.RecurrenceFrequency
 import com.builttoroam.devicecalendar.models.Event
+import com.builttoroam.devicecalendar.models.EventStatus
 import com.builttoroam.devicecalendar.models.RecurrenceRule
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
@@ -142,10 +143,12 @@ class CalendarDelegateProviderTest {
         assertNull(result.error)
         assertEquals("P2D", provider.written!!.getAsString(CalendarContract.Events.DURATION))
         assertNull(provider.written!!.get(CalendarContract.Events.DTEND))
+        assertEquals(1, provider.written!!.get(CalendarContract.Events.ALL_DAY))
     }
 
     @Test
     fun `channel updates a one-off to a bounded daily series`() {
+        provider.stored.put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_TENTATIVE)
         val result = writeRuleThroughChannel(
             eventId = "42",
             rule = "RRULE:FREQ=DAILY;COUNT=10;INTERVAL=1",
@@ -156,6 +159,9 @@ class CalendarDelegateProviderTest {
         assertEquals("FREQ=DAILY;COUNT=10;INTERVAL=1", provider.stored.getAsString(CalendarContract.Events.RRULE))
         assertEquals("PT3600S", provider.stored.getAsString(CalendarContract.Events.DURATION))
         assertNull(provider.stored.get(CalendarContract.Events.DTEND))
+        assertFalse(provider.written!!.containsKey(CalendarContract.Events.STATUS))
+        assertEquals(CalendarContract.Events.STATUS_TENTATIVE, provider.stored.get(CalendarContract.Events.STATUS))
+        assertEquals(0, provider.written!!.get(CalendarContract.Events.ALL_DAY))
     }
 
     @Test
@@ -170,6 +176,18 @@ class CalendarDelegateProviderTest {
         assertNull(result.error)
         assertEquals("42", result.value)
         assertEquals(rule, provider.written!!.getAsString(CalendarContract.Events.RRULE))
+        assertFalse(provider.written!!.containsKey(CalendarContract.Events.STATUS))
+    }
+
+    @Test
+    fun `update preserves explicitly supplied event status`() {
+        provider.stored.put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_TENTATIVE)
+        val result = write(event().apply {
+            eventId = "42"
+            eventStatus = EventStatus.CONFIRMED
+        })
+        assertNull(result.error)
+        assertEquals(CalendarContract.Events.STATUS_CONFIRMED, provider.stored.get(CalendarContract.Events.STATUS))
     }
 
     private fun writeRuleThroughChannel(
