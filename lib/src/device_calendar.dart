@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:rrule/rrule.dart' show RecurrenceRuleToStringOptions;
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart';
 
@@ -309,8 +310,13 @@ class DeviceCalendarPlugin {
           ...event.toJson(),
           // Android CalendarProvider takes the full RFC rule. EventKit uses
           // the structured recurrence fields already supplied by Event.
+          // RFC 5545 requires a UTC UNTIL for a timed DTSTART with a zone.
           if (recurrence != null)
-            'androidRecurrenceRule': recurrence.toString(),
+            'androidRecurrenceRule': recurrence.toString(
+              options: RecurrenceRuleToStringOptions(
+                isTimeUtc: event.allDay != true,
+              ),
+            ),
         };
       },
     );

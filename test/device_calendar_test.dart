@@ -204,6 +204,28 @@ void main() {
     expect(args['recurrenceRule'], containsPair('count', 10));
   });
 
+  test('Android receives a bounded series end in UTC form', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      log.add(call);
+      return '42';
+    });
+    final start = TZDateTime.utc(2026, 11, 24, 18, 30);
+    final event = Event('1')
+      ..eventId = '42'
+      ..start = start
+      ..end = start.add(const Duration(minutes: 30))
+      ..recurrenceRule = rrule.RecurrenceRule.fromString(
+          'RRULE:FREQ=DAILY;UNTIL=20261205T055959Z;INTERVAL=1');
+
+    await deviceCalendarPlugin.createOrUpdateEvent(event);
+
+    final args = log.single.arguments as Map<dynamic, dynamic>;
+    // A timed series with a time zone must state UNTIL as UTC.
+    expect(args['androidRecurrenceRule'],
+        'RRULE:FREQ=DAILY;UNTIL=20261205T055959Z;INTERVAL=1');
+  });
+
   test('Attendee_Serialises_Correctly', () async {
     final attendee = Attendee(
         name: 'Test Attendee',
